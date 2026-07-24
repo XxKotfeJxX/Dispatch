@@ -19,6 +19,8 @@ services:
     build:
       context: .
       target: runtime
+      args:
+        VERSION: ${DISPATCH_VERSION:-dev}
     command: ["/usr/local/bin/dispatch-api"]
     env_file:
       - path: .env
@@ -43,6 +45,8 @@ services:
     build:
       context: .
       target: runtime
+      args:
+        VERSION: ${DISPATCH_VERSION:-dev}
     command: ["/usr/local/bin/dispatch-worker"]
     env_file:
       - path: .env
