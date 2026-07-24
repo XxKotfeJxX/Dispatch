@@ -5,8 +5,9 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/dispatch-api ./cmd/api \
-    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/dispatch-worker ./cmd/worker
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X dispatch/internal/buildinfo.Version=${VERSION}" -o /out/dispatch-api ./cmd/api \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X dispatch/internal/buildinfo.Version=${VERSION}" -o /out/dispatch-worker ./cmd/worker
 
 FROM alpine:3.23 AS runtime
 RUN addgroup -S dispatch && adduser -S -G dispatch dispatch \

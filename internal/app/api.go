@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"dispatch/internal/ai"
+	"dispatch/internal/buildinfo"
 	"dispatch/internal/config"
 	"dispatch/internal/notification"
 	"dispatch/internal/recipient"
@@ -322,6 +323,7 @@ func (api *API) dashboard(writer http.ResponseWriter, request *http.Request) {
 }
 func (api *API) settings(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, 200, map[string]any{"data": map[string]any{
+		"version":            buildinfo.Version,
 		"ai":                 map[string]any{"enabled": api.Config.AI.Enabled, "model": api.Config.AI.Model, "prompt_version": api.Config.AI.PromptVersion},
 		"channels":           map[string]bool{"email": api.Config.SMTP.Host != "", "telegram": api.Config.Telegram.Token != "", "webhook": api.Config.Webhook.Enabled},
 		"worker_concurrency": api.Config.WorkerConcurrency,
