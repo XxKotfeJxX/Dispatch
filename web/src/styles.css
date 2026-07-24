@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color-scheme: dark; }
+body { margin: 0; min-width: 320px; }
+button, input, textarea, select { font: inherit; }
+.panel { @apply rounded-2xl border border-white/8 bg-white/[0.025] p-5 shadow-2xl shadow-black/10; }
+.field { @apply w-full rounded-lg border border-white/10 bg-[#0b111c] px-3 py-2.5 text-sm outline-none placeholder:text-slate-600 focus:border-cyan-400/60; }
+.btn { @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-cyan-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:opacity-50; }
+.btn-secondary { @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/10; }
+.badge { @apply rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wider text-slate-400; }
+.table-wrap { @apply overflow-x-auto rounded-xl border border-white/8; }
+table { @apply w-full text-left text-sm; } th { @apply bg-white/[0.035] px-4 py-3 text-xs uppercase tracking-wide text-slate-500; } td { @apply border-t border-white/6 px-4 py-3; }
+h1 { @apply text-2xl font-semibold tracking-tight; } h2 { @apply text-lg font-semibold; }
+.muted { @apply text-sm text-slate-500; }

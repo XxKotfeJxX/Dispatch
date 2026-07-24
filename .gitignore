@@ -1,0 +1,14 @@
+.env
+.local/
+bin/
+coverage/
+web/node_modules/
+web/dist/
+web/playwright-report/
+web/test-results/
+web/*.d.ts
+web/vite.config.js
+web/playwright.config.js
+web/*.tsbuildinfo
+*.log
+.DS_Store
