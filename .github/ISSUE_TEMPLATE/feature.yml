@@ -1,0 +1,19 @@
+name: Feature request
+description: Propose an in-scope improvement
+labels: ["type: enhancement", "status: needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes: {label: Problem, description: Describe the operational problem rather than only a solution.}
+    validations: {required: true}
+  - type: textarea
+    id: proposal
+    attributes: {label: Proposed outcome}
+    validations: {required: true}
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This does not require multi-tenancy, OAuth, Kafka, Redis, Kubernetes, SMS, or another AI provider.
+          required: true
