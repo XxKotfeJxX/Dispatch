@@ -1,0 +1,156 @@
+openapi: 3.1.0
+info:
+  title: Dispatch API
+  version: 1.0.0
+  description: Self-hosted notification orchestration API.
+servers:
+  - url: http://localhost:8090/api/v1
+security:
+  - apiKey: []
+paths:
+  /notifications:
+    get:
+      summary: List notifications
+      parameters:
+        - {name: status, in: query, schema: {type: string}}
+        - {name: priority, in: query, schema: {type: string}}
+        - {name: channel, in: query, schema: {type: string, enum: [email, telegram, webhook]}}
+        - {name: event_type, in: query, schema: {type: string}}
+        - {name: ai_fallback, in: query, schema: {type: boolean}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 200}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0}}
+      responses:
+        "200": {description: Notification page, content: {application/json: {schema: {$ref: "#/components/schemas/NotificationList"}}}}
+    post:
+      summary: Idempotently enqueue a notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateNotification"}
+      responses:
+        "202": {description: Created and queued}
+        "200": {description: Existing idempotent result}
+        "400": {$ref: "#/components/responses/Error"}
+  /notifications/{id}:
+    get:
+      summary: Get notification, deliveries, attempts, AI records, and audit trail
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses:
+        "200": {description: Notification detail}
+        "404": {$ref: "#/components/responses/Error"}
+  /notifications/{id}/cancel:
+    post:
+      summary: Cancel pending work
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses: {"204": {description: Cancelled}, "409": {$ref: "#/components/responses/Error"}}
+  /notifications/{id}/retry:
+    post:
+      summary: Retry a failed notification
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses: {"202": {description: Retry queued}, "409": {$ref: "#/components/responses/Error"}}
+  /recipients:
+    get:
+      summary: List recipients
+      responses: {"200": {description: Recipients}}
+    post:
+      summary: Create recipient
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Recipient"}}}}
+      responses: {"201": {description: Created}, "400": {$ref: "#/components/responses/Error"}}
+  /recipients/{id}:
+    get:
+      summary: Get recipient
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses: {"200": {description: Recipient}, "404": {$ref: "#/components/responses/Error"}}
+    put:
+      summary: Update recipient
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses: {"200": {description: Updated}}
+    delete:
+      summary: Delete recipient
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses: {"204": {description: Deleted}}
+  /templates:
+    get: {summary: List templates, responses: {"200": {description: Templates}}}
+    post: {summary: Create template, responses: {"201": {description: Created}}}
+  /templates/{id}:
+    put: {summary: Update template, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"200": {description: Updated}}}
+    delete: {summary: Delete template, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"204": {description: Deleted}}}
+  /rules:
+    get: {summary: List deterministic routing rules, responses: {"200": {description: Rules}}}
+    post: {summary: Create routing rule, responses: {"201": {description: Created}}}
+  /rules/{id}:
+    put: {summary: Update routing rule, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"200": {description: Updated}}}
+    delete: {summary: Delete routing rule, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"204": {description: Deleted}}}
+  /dashboard:
+    get: {summary: Get operational dashboard, responses: {"200": {description: Dashboard}}}
+  /settings:
+    get: {summary: Get non-secret runtime readiness, responses: {"200": {description: Settings}}}
+  /events:
+    get:
+      summary: Stream audit events with server-sent events
+      responses: {"200": {description: Event stream, content: {text/event-stream: {schema: {type: string}}}}}
+  /ai/preview:
+    post:
+      summary: Preview an advisory AI decision
+      responses: {"200": {description: Decision}, "503": {$ref: "#/components/responses/Error"}}
+components:
+  securitySchemes:
+    apiKey: {type: apiKey, in: header, name: X-API-Key}
+  parameters:
+    ID: {name: id, in: path, required: true, schema: {type: string}}
+  responses:
+    Error:
+      description: Structured error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties: {code: {type: string}, message: {type: string}}
+  schemas:
+    CreateNotification:
+      type: object
+      required: [idempotency_key, recipient_id, event_type, body]
+      properties:
+        idempotency_key: {type: string, maxLength: 200}
+        recipient_id: {type: string}
+        event_type: {type: string}
+        subject: {type: string, maxLength: 200}
+        body: {type: string, maxLength: 100000}
+        metadata: {type: object, additionalProperties: true}
+        requested_channels: {type: array, items: {type: string, enum: [email, telegram, webhook]}, uniqueItems: true}
+        scheduled_at: {type: [string, "null"], format: date-time}
+    Notification:
+      allOf:
+        - {$ref: "#/components/schemas/CreateNotification"}
+        - type: object
+          required: [id, status, priority, created_at, updated_at]
+          properties:
+            id: {type: string}
+            status: {type: string}
+            priority: {type: string}
+            category: {type: string}
+            summary: {type: string}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
+    NotificationList:
+      type: object
+      properties:
+        data: {type: array, items: {$ref: "#/components/schemas/Notification"}}
+        total: {type: integer}
+        limit: {type: integer}
+        offset: {type: integer}
+    Recipient:
+      type: object
+      required: [name, preferences]
+      properties:
+        id: {type: string, readOnly: true}
+        name: {type: string}
+        email: {type: string, format: email}
+        telegram_chat_id: {type: string}
+        webhook_url: {type: string, format: uri}
+        preferences: {type: object, additionalProperties: true}
