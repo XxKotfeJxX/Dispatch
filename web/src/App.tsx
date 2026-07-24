@@ -1,5 +1,8 @@
 import { NavLink, Route, Routes } from 'react-router-dom'
 import { Activity, Bell, Bot, LayoutDashboard, Settings, Users, Waypoints } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { setApiKey } from './api'
 import Dashboard from './pages/Dashboard'
 import Notifications from './pages/Notifications'
 import NotificationDetail from './pages/NotificationDetail'
@@ -15,6 +18,8 @@ const navigation = [
 ] as const
 
 export default function App() {
+  const [authRequired,setAuthRequired]=useState(false),[key,setKey]=useState(''),client=useQueryClient()
+  useEffect(()=>{const show=()=>setAuthRequired(true);window.addEventListener('dispatch:unauthorized',show);return()=>window.removeEventListener('dispatch:unauthorized',show)},[])
   return <div className="min-h-screen bg-[#070b12] text-slate-100">
     <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 border-r border-white/8 bg-[#0a0f18]/95 p-5 md:block">
       <div className="mb-9 flex items-center gap-3"><span className="grid size-10 place-items-center rounded-xl bg-cyan-400 text-slate-950"><Bot size={22}/></span><div><b className="text-lg">Dispatch</b><p className="text-xs text-slate-500">Operations console</p></div></div>
@@ -27,5 +32,6 @@ export default function App() {
       <Route path="/" element={<Dashboard/>}/><Route path="/notifications" element={<Notifications/>}/><Route path="/notifications/:id" element={<NotificationDetail/>}/>
       <Route path="/recipients" element={<Recipients/>}/><Route path="/rules" element={<Rules/>}/><Route path="/templates" element={<Templates/>}/><Route path="/settings" element={<SettingsPage/>}/>
     </Routes></div></main>
+    {authRequired&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-5 backdrop-blur-sm"><form className="panel w-full max-w-md" onSubmit={e=>{e.preventDefault();setApiKey(key);setKey('');setAuthRequired(false);client.invalidateQueries()}}><h2>Connect to Dispatch</h2><p className="muted mt-2">Enter the API key for this server. It stays only in this tab's memory.</p><input autoFocus autoComplete="off" type="password" className="field mt-5" placeholder="API key" value={key} onChange={e=>setKey(e.target.value)}/><button className="btn mt-3 w-full" disabled={!key.trim()}>Connect</button></form></div>}
   </div>
 }

@@ -2,7 +2,7 @@
 
 | Asset | Threat | Control |
 |---|---|---|
-| API and message data | Unauthorized access | Constant-time API-key comparison, CORS allowlist, request size limit, rate limit, TLS deployment guidance |
+| API and message data | Unauthorized access | Constant-time API-key comparison, in-memory-only console credential, CORS allowlist, request size limit, rate limit, TLS deployment guidance |
 | Provider credentials | Disclosure | Environment-only configuration, settings expose readiness only, log messages omit payloads and secrets |
 | Internal network | Webhook SSRF | HTTP(S)-only parsing, no URL credentials/fragments, DNS resolution, private/loopback/link-local blocking |
 | Queue integrity | Duplicate or lost work | Atomic enqueue, unique idempotency keys, row locks with `SKIP LOCKED`, stale lock recovery |
