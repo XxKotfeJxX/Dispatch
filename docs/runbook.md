@@ -25,4 +25,4 @@ Back up PostgreSQL with `pg_dump` and protect the archive like production messag
 
 ## Key rotation
 
-Update `API_KEY` and provider secrets in the deployment secret store, then restart API and worker containers. The web console key is held only in browser local storage.
+Update `API_KEY` and provider secrets in the deployment secret store, then restart API and worker containers. The web console key is held only in the current tab's JavaScript memory and is cleared on reload.
