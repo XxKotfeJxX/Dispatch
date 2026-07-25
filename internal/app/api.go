@@ -86,6 +86,9 @@ func (api *API) Handler() http.Handler {
 			routes.Delete("/sources/{id}", api.deleteIngressSource)
 			routes.Get("/connectors", api.listConnectors)
 			routes.Post("/connectors/{connector}/authorize", api.beginConnectorOAuth)
+			routes.Post("/connectors/telegram/auth/start", api.beginTelegramAccountAuth)
+			routes.Post("/connectors/telegram/auth/{authID}/code", api.completeTelegramAccountCode)
+			routes.Post("/connectors/telegram/auth/{authID}/password", api.completeTelegramAccountPassword)
 			routes.Post("/connections", api.createConnectorConnection)
 			routes.Post("/connections/{id}/test", api.testConnectorConnection)
 			routes.Post("/connections/{id}/sample", api.connectorSample)
@@ -350,6 +353,8 @@ func (api *API) settings(writer http.ResponseWriter, _ *http.Request) {
 			),
 			"github_app":  api.Config.Connectors.GitHubAppSlug != "",
 			"discord_app": api.Config.Connectors.DiscordClientID != "",
+			"telegram_account": api.Config.Connectors.TelegramAPIID > 0 &&
+				api.Config.Connectors.TelegramAPIHash != "",
 			"google_oauth": api.Config.Connectors.GoogleClientID != "" &&
 				api.Config.Connectors.GoogleClientSecret != "",
 		},

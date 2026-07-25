@@ -48,6 +48,7 @@ func (api *API) createConnectorConnection(writer http.ResponseWriter, request *h
 		return
 	}
 	if manifest.Auth == connectors.AuthOAuth2 || manifest.Auth == connectors.AuthAppInstall ||
+		manifest.Auth == connectors.AuthUserSession ||
 		manifest.ID == "webhook" {
 		writeError(writer, http.StatusConflict, "managed_flow_required",
 			"use the connector authorization or advanced webhook flow")
@@ -117,6 +118,37 @@ func (api *API) testConnectorConnection(writer http.ResponseWriter, request *htt
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), api.Config.ProviderTimeout)
 	defer cancel()
+	if item.ConnectorID == "telegram" {
+		result, updatedCredentials, telegramErr := api.testTelegramAccount(ctx, credentials)
+		if telegramErr != nil {
+			_ = api.Store.UpdateConnectorState(
+				request.Context(), item.ID, "error", "", telegramErr.Error(), true,
+			)
+			writeError(writer, http.StatusBadGateway, "connector_test_failed", telegramErr.Error())
+			return
+		}
+		cipher, encryptErr := api.encryptConnectorCredentials(updatedCredentials)
+		if encryptErr != nil {
+			api.storeError(writer, encryptErr)
+			return
+		}
+		if err := api.Store.UpdateConnectorCredentials(
+			request.Context(), item.ID, cipher, nil,
+		); err != nil {
+			api.storeError(writer, err)
+			return
+		}
+		if err := api.Store.UpdateConnectorState(
+			request.Context(), item.ID, "connected", result.AccountLabel, "", true,
+		); err != nil {
+			api.storeError(writer, err)
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"data": result, "status": "connected",
+		})
+		return
+	}
 	if provider, oauth := connectors.OAuthSpec(item.ConnectorID, api.Config.Connectors); oauth {
 		result, updatedCredentials, oauthErr := api.testConnectorOAuth(
 			ctx, provider, credentials,

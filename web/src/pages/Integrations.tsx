@@ -28,8 +28,11 @@ type Connection = {
 }
 type CatalogResponse = {data:Manifest[];connections:Connection[]}
 type CreateResponse = {data:Connection;test:{message:string};credentials_stored:boolean}
+type TelegramAuthResponse = {
+  auth_id?:string; step:'code'|'password'|'connected'; message:string; data?:Connection
+}
 
-const consumerServices = new Set(['discord', 'github', 'google', 'youtube'])
+const consumerServices = new Set(['telegram', 'discord', 'github', 'google', 'youtube'])
 const statusStyles:Record<Connection['status'],string>={
   connected:'border-emerald-400/20 bg-emerald-400/8 text-emerald-300',
   action_required:'border-amber-400/20 bg-amber-400/8 text-amber-300',
@@ -44,10 +47,11 @@ export default function Integrations(){
   const recipients=useQuery({queryKey:['recipients'],queryFn:()=>api<{data:Recipient[]}>('/recipients')})
   const [selected,setSelected]=useState<Manifest|null>(null)
   const [unavailable,setUnavailable]=useState<Manifest|null>(null)
+  const [telegramFlow,setTelegramFlow]=useState<{auth_id:string;step:'code'|'password'}|null>(null)
   const [advanced,setAdvanced]=useState(false),[notice,setNotice]=useState('')
   const [form,setForm]=useState({name:'',recipient_id:'',values:{} as Record<string,string>})
 
-  const reset=()=>{setSelected(null);setForm({name:'',recipient_id:'',values:{}})}
+  const reset=()=>{setSelected(null);setTelegramFlow(null);setForm({name:'',recipient_id:'',values:{}})}
   const connect=useMutation({
     mutationFn:async()=>{
       if(!selected)throw new Error('Select a connector')
@@ -75,6 +79,38 @@ export default function Integrations(){
   const test=useMutation({
     mutationFn:(id:string)=>api<{data:{message:string};status:string;activation_error?:string}>(`/connections/${id}/test`,{method:'POST',body:'{}'}),
     onSuccess:value=>{setNotice(`${value.data.message}${value.activation_error?` ${value.activation_error}`:''}`);client.invalidateQueries({queryKey:['connectors']})},
+  })
+  const telegramConnect=useMutation({
+    mutationFn:()=>{
+      if(!telegramFlow){
+        return api<TelegramAuthResponse>('/connectors/telegram/auth/start',{
+          method:'POST',body:JSON.stringify({
+            name:form.name,recipient_id:form.recipient_id,
+            phone_number:form.values.phone_number,
+          }),
+        })
+      }
+      return api<TelegramAuthResponse>(`/connectors/telegram/auth/${telegramFlow.auth_id}/${telegramFlow.step}`,{
+        method:'POST',body:JSON.stringify(
+          telegramFlow.step==='code'
+            ? {code:form.values.code}
+            : {password:form.values.password},
+        ),
+      })
+    },
+    onSuccess:value=>{
+      if(value.step==='connected'){
+        setNotice(value.message)
+        reset()
+        client.invalidateQueries({queryKey:['connectors']})
+        return
+      }
+      if(value.auth_id&&(value.step==='code'||value.step==='password')){
+        setTelegramFlow({auth_id:value.auth_id,step:value.step})
+        setNotice(value.message)
+        setForm(previous=>({...previous,values:{...previous.values,code:'',password:''}}))
+      }
+    },
   })
   const sample=useMutation({
     mutationFn:(id:string)=>api<{data:{notification_id:string}}>(`/connections/${id}/sample`,{method:'POST',body:'{}'}),
@@ -107,7 +143,11 @@ export default function Integrations(){
     setSelected(manifest)
     setForm({name:`${manifest.name} connection`,recipient_id:recipients.data?.data[0]?.id??'',values:{}})
   }
-  const submit=(event:FormEvent)=>{event.preventDefault();connect.mutate()}
+  const submit=(event:FormEvent)=>{
+    event.preventDefault()
+    if(selected?.id==='telegram')telegramConnect.mutate()
+    else connect.mutate()
+  }
   if(catalog.isLoading||recipients.isLoading)return <Loading/>
   if(catalog.error)return <Failure error={catalog.error}/>
   if(recipients.error)return <Failure error={recipients.error}/>
@@ -154,7 +194,7 @@ export default function Integrations(){
 
     <section className="space-y-4" aria-labelledby="service-catalog-title">
       <div><h2 id="service-catalog-title">Connect a service</h2><p className="muted mt-1">Click a card to begin. Hover the info icon for supported events and connection details.</p></div>
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {manifests.map(manifest=><article
           className="group relative isolate h-64 overflow-visible rounded-3xl border border-white/10 bg-gradient-to-br from-white/[.08] to-white/[.025] shadow-xl shadow-black/10 transition duration-300 hover:z-20 hover:-translate-y-1 hover:border-cyan-300/35 hover:shadow-cyan-950/30 focus-within:z-20 focus-within:border-cyan-300/50"
           key={manifest.id}
@@ -207,14 +247,16 @@ export default function Integrations(){
           <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-cyan-400">Connect service</p><h2 className="mt-1">{selected.name}</h2><p className="muted mt-2">{selected.summary}</p></div>
           <button type="button" aria-label="Close" className="text-slate-500 hover:text-white" onClick={reset}><X/></button>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
+        {!telegramFlow&&<div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1.5 text-xs text-slate-400"><span>Connection name</span><input className="field" required value={form.name} onChange={event=>setForm(previous=>({...previous,name:event.target.value}))}/></label>
           <label className="space-y-1.5 text-xs text-slate-400"><span>Send notifications to</span><select className="field" required value={form.recipient_id} onChange={event=>setForm(previous=>({...previous,recipient_id:event.target.value}))}>{recipients.data!.data.map(person=><option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
-        </div>
-        {(selected.fields??[]).map(field=><label className="block space-y-1.5 text-xs text-slate-400" key={field.name}><span>{field.label}</span><input className="field" type={field.type} required={field.required} autoComplete={field.secret?'new-password':'off'} placeholder={field.placeholder} value={form.values[field.name]??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,[field.name]:event.target.value}}))}/>{field.help&&<span className="block leading-5 text-slate-600">{field.help}</span>}</label>)}
-        {recipients.data!.data.length===0&&<p className="rounded-lg bg-amber-400/8 p-3 text-sm text-amber-200">Create a recipient first so Dispatch knows where to deliver notifications.</p>}
-        {connect.error&&<p className="rounded-lg bg-red-400/8 p-3 text-sm text-red-300">{connect.error.message}</p>}
-        <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={reset}>Cancel</button><button className="btn" disabled={connect.isPending||!form.recipient_id}>{connect.isPending?'Connecting…':selected.auth==='oauth2'?'Continue to sign in':'Connect'}</button></div>
+        </div>}
+        {!telegramFlow&&(selected.fields??[]).map(field=><label className="block space-y-1.5 text-xs text-slate-400" key={field.name}><span>{field.label}</span><input className="field" type={field.type} required={field.required} autoComplete={field.name==='phone_number'?'tel':field.secret?'new-password':'off'} placeholder={field.placeholder} value={form.values[field.name]??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,[field.name]:event.target.value}}))}/>{field.help&&<span className="block leading-5 text-slate-600">{field.help}</span>}</label>)}
+        {telegramFlow?.step==='code'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Telegram sign-in code</span><input className="field text-lg tracking-[.25em]" inputMode="numeric" autoComplete="one-time-code" required autoFocus value={form.values.code??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,code:event.target.value}}))}/><span className="block leading-5 text-slate-600">Open Telegram on an already signed-in device and copy the code from the Telegram service chat.</span></label>}
+        {telegramFlow?.step==='password'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Telegram two-step verification password</span><input className="field" type="password" autoComplete="current-password" required autoFocus value={form.values.password??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,password:event.target.value}}))}/><span className="block leading-5 text-slate-600">The password is sent directly to Telegram for verification and is never stored.</span></label>}
+        {recipients.data!.data.length===0&&!telegramFlow&&<p className="rounded-lg bg-amber-400/8 p-3 text-sm text-amber-200">Create a recipient first so Dispatch knows where to deliver notifications.</p>}
+        {(connect.error||telegramConnect.error)&&<p className="rounded-lg bg-red-400/8 p-3 text-sm text-red-300">{(connect.error||telegramConnect.error)?.message}</p>}
+        <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={reset}>Cancel</button><button className="btn" disabled={connect.isPending||telegramConnect.isPending||(!telegramFlow&&!form.recipient_id)}>{connect.isPending||telegramConnect.isPending?'Connecting…':telegramFlow?.step==='code'?'Verify code':telegramFlow?.step==='password'?'Verify password':selected.id==='telegram'?'Send sign-in code':selected.auth==='oauth2'?'Continue to sign in':'Connect'}</button></div>
       </form>
     </div>}
 

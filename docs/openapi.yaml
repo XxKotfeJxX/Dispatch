@@ -71,6 +71,60 @@ paths:
       responses:
         "200": {description: Provider authorization URL}
         "409": {$ref: "#/components/responses/Error"}
+  /api/v1/connectors/telegram/auth/start:
+    post:
+      summary: Start Telegram user-account authorization and send a sign-in code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, recipient_id, phone_number]
+              properties:
+                name: {type: string}
+                recipient_id: {type: string}
+                phone_number: {type: string, pattern: '^\+[1-9][0-9]{6,14}$'}
+      responses:
+        "200": {description: Sign-in code requested}
+        "400": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /api/v1/connectors/telegram/auth/{authID}/code:
+    post:
+      summary: Verify a Telegram sign-in code
+      parameters:
+        - {name: authID, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties: {code: {type: string}}
+      responses:
+        "200": {description: 2FA password required}
+        "201": {description: Telegram connection created}
+        "404": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /api/v1/connectors/telegram/auth/{authID}/password:
+    post:
+      summary: Verify Telegram two-step authentication and create the connection
+      parameters:
+        - {name: authID, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties: {password: {type: string, format: password, writeOnly: true}}
+      responses:
+        "201": {description: Telegram connection created}
+        "404": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
   /api/v1/connections:
     post:
       summary: Verify credentials and create a managed connector connection
@@ -324,7 +378,7 @@ components:
         name: {type: string}
         summary: {type: string}
         category: {type: string}
-        auth: {type: string, enum: [none, oauth2, app_install, api_key]}
+        auth: {type: string, enum: [none, user_session, oauth2, app_install, api_key]}
         transport: {type: string, enum: [internal, webhook, gateway, polling, websub]}
         availability: {type: string, enum: [available, setup_required, limited, unavailable]}
         configured: {type: boolean}

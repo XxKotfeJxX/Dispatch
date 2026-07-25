@@ -12,12 +12,27 @@ func Catalog(cfg config.ConnectorConfig) []Manifest {
 	googleReady := cfg.GoogleClientID != "" && cfg.GoogleClientSecret != ""
 	githubReady := cfg.GitHubAppSlug != ""
 	discordReady := cfg.DiscordClientID != ""
+	telegramReady := cfg.TelegramAPIID > 0 && cfg.TelegramAPIHash != ""
 	result := []Manifest{
 		{
 			ID: "demo", Name: "Demo source", Category: "Testing",
 			Summary: "Generate a safe sample event without an external account.",
 			Auth:    AuthNone, Transport: TransportInternal, Availability: Available, Configured: true,
 			Capabilities: []string{"sample events", "delivery verification"},
+		},
+		{
+			ID: "telegram", Name: "Telegram", Category: "Messaging",
+			Summary: "Connect your personal Telegram account and receive new message events.",
+			Auth:    AuthUserSession, Transport: TransportGateway, Availability: SetupRequired, Configured: telegramReady,
+			Capabilities: []string{"personal account", "private chats", "groups", "channels", "real-time updates"},
+			Fields: []Field{{
+				Name: "phone_number", Label: "Phone number", Type: "tel", Required: true,
+				Placeholder: "+380…", Help: "Telegram sends the sign-in code to your existing Telegram session or phone.",
+			}},
+			SetupHint: availabilityHint(telegramReady,
+				"Ready for secure phone, code, and optional 2FA authorization.",
+				"Telegram account connections are not enabled on this installation yet."),
+			Documentation: "https://core.telegram.org/api/auth",
 		},
 		{
 			ID: "discord", Name: "Discord", Category: "Messaging",

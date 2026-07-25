@@ -67,6 +67,8 @@ type IngressConfig struct {
 type ConnectorConfig struct {
 	PublicURL          string
 	EncryptionKey      string
+	TelegramAPIID      int
+	TelegramAPIHash    string
 	GitHubAppSlug      string
 	DiscordClientID    string
 	GoogleClientID     string
@@ -114,6 +116,8 @@ func Load() (Config, error) {
 		Connectors: ConnectorConfig{
 			PublicURL:          strings.TrimRight(env("CONNECTOR_PUBLIC_URL", env("WEB_ORIGIN", "http://localhost:5173")), "/"),
 			EncryptionKey:      strings.TrimSpace(os.Getenv("CONNECTOR_ENCRYPTION_KEY")),
+			TelegramAPIID:      envInt("TELEGRAM_API_ID", 0),
+			TelegramAPIHash:    strings.TrimSpace(os.Getenv("TELEGRAM_API_HASH")),
 			GitHubAppSlug:      strings.TrimSpace(os.Getenv("GITHUB_APP_SLUG")),
 			DiscordClientID:    strings.TrimSpace(os.Getenv("DISCORD_CLIENT_ID")),
 			GoogleClientID:     strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID")),

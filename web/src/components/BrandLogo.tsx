@@ -2,6 +2,7 @@ import {
   siDiscord,
   siGithub,
   siGmail,
+  siTelegram,
   siYoutube,
 } from 'simple-icons'
 
@@ -15,6 +16,7 @@ const brands: Record<string, BrandIcon> = {
   discord: siDiscord,
   github: siGithub,
   google: siGmail,
+  telegram: siTelegram,
   youtube: siYoutube,
 }
 

@@ -55,7 +55,7 @@ Copy `.env.example` to `.env`. Local console access does not require a key by de
 
 For local webhook targets, `WEBHOOK_ALLOW_PRIVATE=true` is an explicit development-only escape hatch.
 
-Open **Integrations** in the console for large one-click service cards for Discord, GitHub, Gmail, and YouTube. Demo testing and Universal Webhook configuration are kept in separate test and developer areas. End users never enter provider tokens or application secrets. See [Managed connectors](docs/connectors.md) and [Universal ingress](docs/ingress.md).
+Open **Integrations** in the console for large service cards for Telegram account authorization, Discord, GitHub, Gmail, and YouTube. Demo testing and Universal Webhook configuration are kept in separate test and developer areas. End users never enter provider tokens or application secrets. See [Managed connectors](docs/connectors.md) and [Universal ingress](docs/ingress.md).
 
 ## Development
 

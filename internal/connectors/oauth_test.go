@@ -33,7 +33,10 @@ func TestCatalogReportsDeploymentReadiness(t *testing.T) {
 		byID["google"].Configured || byID["github"].Configured {
 		t.Fatalf("unexpected catalog state: %#v", byID)
 	}
-	for _, removed := range []string{"telegram", "viber", "chatgpt"} {
+	if byID["telegram"].Configured || byID["telegram"].Auth != AuthUserSession {
+		t.Fatalf("Telegram must use a deployment-configured user session: %#v", byID["telegram"])
+	}
+	for _, removed := range []string{"viber", "chatgpt"} {
 		if _, exists := byID[removed]; exists {
 			t.Fatalf("%s must not be offered as a consumer connector", removed)
 		}

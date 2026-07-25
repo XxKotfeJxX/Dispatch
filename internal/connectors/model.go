@@ -7,10 +7,11 @@ type Transport string
 type Availability string
 
 const (
-	AuthNone       AuthKind = "none"
-	AuthOAuth2     AuthKind = "oauth2"
-	AuthAppInstall AuthKind = "app_install"
-	AuthAPIKey     AuthKind = "api_key"
+	AuthNone        AuthKind = "none"
+	AuthUserSession AuthKind = "user_session"
+	AuthOAuth2      AuthKind = "oauth2"
+	AuthAppInstall  AuthKind = "app_install"
+	AuthAPIKey      AuthKind = "api_key"
 
 	TransportInternal Transport = "internal"
 	TransportWebhook  Transport = "webhook"

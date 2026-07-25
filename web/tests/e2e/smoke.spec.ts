@@ -9,6 +9,7 @@ test('console shell renders', async ({page})=>{
 test('integrations catalog uses branded one-click cards and separates developer tools', async ({page})=>{
  await page.route('**/api/v1/connectors', route=>route.fulfill({json:{data:[
   {id:'demo',name:'Demo source',summary:'Generate a safe sample event.',category:'Testing',auth:'none',transport:'internal',availability:'available',configured:true,capabilities:['sample events'],fields:null,setup_hint:'Ready.'},
+  {id:'telegram',name:'Telegram',summary:'Connect your personal Telegram account.',category:'Messaging',auth:'user_session',transport:'gateway',availability:'setup_required',configured:true,capabilities:['private chats','groups'],fields:[{name:'phone_number',label:'Phone number',type:'tel',required:true,secret:false,placeholder:'+380…'}],setup_hint:'Ready.'},
   {id:'discord',name:'Discord',summary:'Receive allowlisted bot messages.',category:'Messaging',auth:'app_install',transport:'gateway',availability:'setup_required',configured:false,capabilities:['Gateway'],fields:null,setup_hint:'Set DISCORD_CLIENT_ID first.'},
   {id:'github',name:'GitHub',summary:'Receive repository events.',category:'Development',auth:'app_install',transport:'webhook',availability:'setup_required',configured:false,capabilities:['issues'],fields:null,setup_hint:'Set GITHUB_APP_SLUG first.'},
   {id:'google',name:'Google / Gmail',summary:'Receive Gmail changes.',category:'Productivity',auth:'oauth2',transport:'webhook',availability:'setup_required',configured:false,capabilities:['OAuth 2.0'],fields:null,setup_hint:'Set Google OAuth credentials first.'},
@@ -27,13 +28,22 @@ test('integrations catalog uses branded one-click cards and separates developer 
   id:'rec_demo',name:'Operations',email:'ops@example.test',
   preferences:{default_channels:['email']},
  }]}}))
+ await page.route('**/api/v1/connectors/telegram/auth/start', route=>route.fulfill({json:{
+  auth_id:'tg_auth_test',step:'code',message:'Enter the code Telegram sent.',
+ }}))
  await page.goto('/integrations')
  await expect(page.getByRole('heading',{name:'Integrations'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect Discord'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect GitHub'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect Google / Gmail'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect YouTube'})).toBeVisible()
- await expect(page.getByRole('button',{name:/Telegram|Viber|ChatGPT/})).toHaveCount(0)
+ await expect(page.getByRole('button',{name:'Connect Telegram'})).toBeVisible()
+ await expect(page.getByRole('button',{name:/Viber|ChatGPT/})).toHaveCount(0)
+ await page.getByRole('button',{name:'Connect Telegram'}).click()
+ await page.getByLabel('Phone number').fill('+380501234567')
+ await page.getByRole('button',{name:'Send sign-in code'}).click()
+ await expect(page.getByLabel('Telegram sign-in code')).toBeVisible()
+ await page.getByRole('button',{name:'Close'}).click()
  await page.getByRole('button',{name:'Connect GitHub'}).hover()
  await expect(page.getByText('GitHub').last()).toBeVisible()
  await page.getByRole('button',{name:'About GitHub'}).hover()
