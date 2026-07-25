@@ -8,7 +8,6 @@ type Availability string
 
 const (
 	AuthNone       AuthKind = "none"
-	AuthBotToken   AuthKind = "bot_token"
 	AuthOAuth2     AuthKind = "oauth2"
 	AuthAppInstall AuthKind = "app_install"
 	AuthAPIKey     AuthKind = "api_key"

@@ -20,20 +20,6 @@ func Catalog(cfg config.ConnectorConfig) []Manifest {
 			Capabilities: []string{"sample events", "delivery verification"},
 		},
 		{
-			ID: "telegram", Name: "Telegram", Category: "Messaging",
-			Summary: "Receive private bot messages and route them through Dispatch.",
-			Auth:    AuthBotToken, Transport: TransportWebhook, Availability: Available, Configured: publicHTTPS,
-			Capabilities: []string{"bot messages", "automatic webhook", "sender identity"},
-			Fields: []Field{{
-				Name: "bot_token", Label: "Bot token", Type: "password", Required: true, Secret: true,
-				Placeholder: "123456:ABC…", Help: "Create a bot with @BotFather and paste its token.",
-			}},
-			SetupHint: availabilityHint(publicHTTPS,
-				"Ready for one-click webhook registration.",
-				"Token verification works locally; receiving events requires CONNECTOR_PUBLIC_URL with public HTTPS."),
-			Documentation: "https://core.telegram.org/bots/api",
-		},
-		{
 			ID: "discord", Name: "Discord", Category: "Messaging",
 			Summary: "Install the Dispatch bot and receive allowlisted Gateway events.",
 			Auth:    AuthAppInstall, Transport: TransportGateway, Availability: SetupRequired, Configured: discordReady,
@@ -43,20 +29,6 @@ func Catalog(cfg config.ConnectorConfig) []Manifest {
 				"Set DISCORD_CLIENT_ID and the existing Discord bridge credentials first."),
 			Documentation:    "https://docs.discord.com/developers/topics/oauth2",
 			AuthorizationURL: discordInstallURL(cfg.DiscordClientID),
-		},
-		{
-			ID: "viber", Name: "Viber", Category: "Messaging",
-			Summary: "Receive messages from a commercially provisioned Viber bot.",
-			Auth:    AuthBotToken, Transport: TransportWebhook, Availability: Limited, Configured: publicHTTPS,
-			Capabilities: []string{"bot messages", "automatic webhook", "delivery events"},
-			Fields: []Field{{
-				Name: "auth_token", Label: "Viber bot token", Type: "password", Required: true, Secret: true,
-				Help: "Viber has required commercial chatbot provisioning since February 2024.",
-			}},
-			SetupHint: availabilityHint(publicHTTPS,
-				"Commercial bot token required; Dispatch can register its webhook.",
-				"Commercial bot token and a public HTTPS CONNECTOR_PUBLIC_URL are required."),
-			Documentation: "https://developers.viber.com/docs/api/rest-bot-api/",
 		},
 		{
 			ID: "github", Name: "GitHub", Category: "Development",
@@ -82,7 +54,7 @@ func Catalog(cfg config.ConnectorConfig) []Manifest {
 		{
 			ID: "youtube", Name: "YouTube", Category: "Media",
 			Summary: "Watch a channel for uploads and metadata changes through WebSub.",
-			Auth:    AuthNone, Transport: TransportWebSub, Availability: Available, Configured: publicHTTPS,
+			Auth:    AuthNone, Transport: TransportWebSub, Availability: Available, Configured: true,
 			Capabilities: []string{"new uploads", "title changes", "description changes", "WebSub"},
 			Fields: []Field{{
 				Name: "channel_id", Label: "Channel ID", Type: "text", Required: true,
@@ -92,14 +64,6 @@ func Catalog(cfg config.ConnectorConfig) []Manifest {
 				"Ready to create a WebSub subscription.",
 				"Connection can be saved locally; live events require public HTTPS."),
 			Documentation: "https://developers.google.com/youtube/v3/guides/push_notifications",
-		},
-		{
-			ID: "chatgpt", Name: "ChatGPT", Category: "AI",
-			Summary: "Consumer ChatGPT notification subscriptions are not exposed as a public API.",
-			Auth:    AuthOAuth2, Transport: TransportWebhook, Availability: Unavailable, Configured: false,
-			Capabilities:  []string{"OpenAI API webhooks are a separate future connector"},
-			SetupHint:     "ChatGPT Apps connect ChatGPT to external tools; they do not export a user's ChatGPT notifications.",
-			Documentation: "https://developers.openai.com/apps-sdk/",
 		},
 		{
 			ID: "webhook", Name: "Universal webhook", Category: "Advanced",

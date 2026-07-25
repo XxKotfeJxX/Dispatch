@@ -65,17 +65,13 @@ func (api *API) createConnectorConnection(writer http.ResponseWriter, request *h
 	if credentials.Values == nil {
 		credentials.Values = map[string]string{}
 	}
-	if manifest.ID == "telegram" || manifest.ID == "youtube" {
+	if manifest.ID == "youtube" {
 		secret, err := ingress.GenerateSecret()
 		if err != nil {
 			api.storeError(writer, err)
 			return
 		}
-		if manifest.ID == "telegram" {
-			credentials.Values["webhook_secret"] = secret
-		} else {
-			credentials.Values["hook_secret"] = secret
-		}
+		credentials.Values["hook_secret"] = secret
 	}
 	cipher, err := api.encryptConnectorCredentials(credentials)
 	if err != nil {
@@ -443,15 +439,6 @@ func (api *API) connectorWebhook(writer http.ResponseWriter, request *http.Reque
 	if err != nil || len(raw) == 0 {
 		writeError(writer, http.StatusBadRequest, "invalid_body", "callback body is empty")
 		return
-	}
-	if item.ConnectorID == "viber" {
-		var callback struct {
-			Event string `json:"event"`
-		}
-		if json.Unmarshal(raw, &callback) == nil && callback.Event == "webhook" {
-			writer.WriteHeader(http.StatusOK)
-			return
-		}
 	}
 	if item.ConnectorID == "youtube" && !secureConnectorValue(
 		request.URL.Query().Get("token"), credentials.Values["hook_secret"],

@@ -29,8 +29,13 @@ func TestCatalogReportsDeploymentReadiness(t *testing.T) {
 	for _, item := range items {
 		byID[item.ID] = item
 	}
-	if !byID["demo"].Configured || byID["telegram"].Configured ||
-		byID["chatgpt"].Availability != Unavailable {
+	if !byID["demo"].Configured || byID["discord"].Configured ||
+		byID["google"].Configured || byID["github"].Configured {
 		t.Fatalf("unexpected catalog state: %#v", byID)
+	}
+	for _, removed := range []string{"telegram", "viber", "chatgpt"} {
+		if _, exists := byID[removed]; exists {
+			t.Fatalf("%s must not be offered as a consumer connector", removed)
+		}
 	}
 }

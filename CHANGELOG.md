@@ -7,8 +7,8 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ### Added
 
 - Managed connector core with declarative manifests, encrypted credentials, lifecycle state, OAuth state/PKCE, provider tests, activation, pause, disconnect, and sample delivery.
-- User-facing Integrations catalog for Demo, Telegram, Discord, Viber, GitHub, Google/Gmail, YouTube, ChatGPT capability status, and Universal Webhook.
-- Telegram and Viber bot verification/webhook adapters, YouTube WebSub subscription and event normalization, and Google OAuth callback foundation.
+- User-facing Integrations catalog for Discord, GitHub, Google/Gmail, and YouTube, with separate Demo and Universal Webhook tools.
+- YouTube WebSub subscription and event normalization, and Google OAuth callback foundation.
 - Connector persistence, event deduplication, migration, documentation, threat controls, and end-to-end UI coverage.
 
 ### Changed
@@ -16,6 +16,8 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Manual webhook Sources moved under Integrations as an advanced fallback instead of the primary setup flow.
 - Local console access no longer asks for an API key by default; exposed deployments can opt into the legacy single-key protection with `CONSOLE_AUTH_ENABLED=true`.
 - Connector cards now open an actionable setup guide when deployment credentials are missing, and the Universal Webhook card opens its source builder directly.
+- Reworked the consumer catalog as large branded cards with official service logos, hover names, accessible info popovers, and click-to-connect behavior.
+- Removed Telegram Bot, Viber, ChatGPT, and OpenAI API from the consumer integration catalog because they cannot provide the intended personal-notification flow.
 
 ### Fixed
 

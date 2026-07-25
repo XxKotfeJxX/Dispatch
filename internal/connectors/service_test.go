@@ -1,7 +1,6 @@
 package connectors
 
 import (
-	"net/http"
 	"testing"
 )
 
@@ -25,24 +24,6 @@ func TestDemoActivationDoesNotRequirePublicHTTPS(t *testing.T) {
 	)
 	if err != nil || status != "connected" {
 		t.Fatalf("status=%q err=%v", status, err)
-	}
-}
-
-func TestNormalizeTelegram(t *testing.T) {
-	connection := Connection{ConnectorID: "telegram"}
-	credentials := Credentials{Values: map[string]string{"webhook_secret": "secret"}}
-	headers := http.Header{"X-Telegram-Bot-Api-Secret-Token": {"secret"}}
-	event, err := VerifyAndNormalize(connection, credentials, headers, []byte(`{
-		"update_id":42,
-		"message":{"message_id":7,"text":"hello","chat":{"id":8},
-		"from":{"id":9,"first_name":"Ada","username":"ada"}}
-	}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if event.ExternalID != "42" || event.EventType != "telegram.message" ||
-		event.Subject != "@ada" || event.Body != "hello" {
-		t.Fatalf("unexpected event: %#v", event)
 	}
 }
 

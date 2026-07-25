@@ -48,5 +48,5 @@ For one source, use **Sources → Rotate secret**, update the producer immediate
 2. Use **Test** to verify provider credentials and retry activation. Tests never return the stored credential.
 3. `action_required` commonly means `CONNECTOR_PUBLIC_URL` is not public HTTPS or the provider needs deployment-level setup.
 4. Use **Send sample** to separate provider ingestion problems from Dispatch routing or delivery problems.
-5. Before changing `CONNECTOR_ENCRYPTION_KEY`, disconnect every managed connector. Losing the key makes stored OAuth and bot credentials unrecoverable.
-6. Disconnect normally so Dispatch removes Telegram, Viber, or YouTube subscriptions before deleting local state.
+5. Before changing `CONNECTOR_ENCRYPTION_KEY`, disconnect every managed connector. Losing the key makes stored OAuth credentials unrecoverable.
+6. Disconnect normally so Dispatch removes YouTube or other managed subscriptions before deleting local state.

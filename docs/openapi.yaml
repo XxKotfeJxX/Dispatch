@@ -324,7 +324,7 @@ components:
         name: {type: string}
         summary: {type: string}
         category: {type: string}
-        auth: {type: string, enum: [none, bot_token, oauth2, app_install, api_key]}
+        auth: {type: string, enum: [none, oauth2, app_install, api_key]}
         transport: {type: string, enum: [internal, webhook, gateway, polling, websub]}
         availability: {type: string, enum: [available, setup_required, limited, unavailable]}
         configured: {type: boolean}

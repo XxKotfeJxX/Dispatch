@@ -3,10 +3,6 @@ package connectors
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -15,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -38,27 +33,6 @@ func (service Service) Test(
 	switch manifest.ID {
 	case "demo":
 		return TestResult{OK: true, AccountLabel: "Local demo", Message: "Demo connector is ready."}, nil
-	case "telegram":
-		var response struct {
-			OK          bool   `json:"ok"`
-			Description string `json:"description"`
-			Result      struct {
-				Username  string `json:"username"`
-				FirstName string `json:"first_name"`
-			} `json:"result"`
-		}
-		endpoint := "https://api.telegram.org/bot" + url.PathEscape(credentials["bot_token"]) + "/getMe"
-		if err := service.jsonRequest(ctx, http.MethodGet, endpoint, nil, nil, &response); err != nil {
-			return TestResult{}, fmt.Errorf("Telegram verification failed: %w", err)
-		}
-		if !response.OK {
-			return TestResult{}, fmt.Errorf("Telegram rejected the bot token: %s", response.Description)
-		}
-		label := strings.TrimSpace(response.Result.FirstName)
-		if response.Result.Username != "" {
-			label = "@" + response.Result.Username
-		}
-		return TestResult{OK: true, AccountLabel: label, Message: "Telegram bot credentials verified."}, nil
 	case "discord":
 		var response struct {
 			Username string `json:"username"`
@@ -70,21 +44,6 @@ func (service Service) Test(
 			return TestResult{}, fmt.Errorf("Discord verification failed: %w", err)
 		}
 		return TestResult{OK: true, AccountLabel: response.Username, Message: "Discord bot credentials verified."}, nil
-	case "viber":
-		var response struct {
-			Status        int    `json:"status"`
-			StatusMessage string `json:"status_message"`
-			Name          string `json:"name"`
-		}
-		headers := http.Header{"X-Viber-Auth-Token": {credentials["auth_token"]}}
-		if err := service.jsonRequest(ctx, http.MethodPost,
-			"https://chatapi.viber.com/pa/get_account_info", headers, []byte(`{}`), &response); err != nil {
-			return TestResult{}, fmt.Errorf("Viber verification failed: %w", err)
-		}
-		if response.Status != 0 {
-			return TestResult{}, fmt.Errorf("Viber rejected the bot token: %s", response.StatusMessage)
-		}
-		return TestResult{OK: true, AccountLabel: response.Name, Message: "Viber bot credentials verified."}, nil
 	case "youtube":
 		return TestResult{
 			OK: true, AccountLabel: config["channel_id"],
@@ -119,8 +78,7 @@ func (service Service) Activate(
 	connection Connection,
 	credentials Credentials,
 ) (string, error) {
-	if (connection.ConnectorID == "telegram" || connection.ConnectorID == "viber" ||
-		connection.ConnectorID == "youtube") &&
+	if connection.ConnectorID == "youtube" &&
 		!strings.HasPrefix(strings.ToLower(service.PublicURL), "https://") {
 		return "action_required", errors.New("live callbacks require CONNECTOR_PUBLIC_URL with public HTTPS")
 	}
@@ -129,42 +87,6 @@ func (service Service) Activate(
 		callback += "?token=" + url.QueryEscape(credentials.Values["hook_secret"])
 	}
 	switch connection.ConnectorID {
-	case "telegram":
-		body, _ := json.Marshal(map[string]any{
-			"url": callback, "secret_token": credentials.Values["webhook_secret"],
-			"allowed_updates": []string{"message"},
-		})
-		var response struct {
-			OK          bool   `json:"ok"`
-			Description string `json:"description"`
-		}
-		endpoint := "https://api.telegram.org/bot" +
-			url.PathEscape(credentials.Values["bot_token"]) + "/setWebhook"
-		if err := service.jsonRequest(ctx, http.MethodPost, endpoint, nil, body, &response); err != nil {
-			return "error", err
-		}
-		if !response.OK {
-			return "error", errors.New(response.Description)
-		}
-		return "connected", nil
-	case "viber":
-		body, _ := json.Marshal(map[string]any{
-			"url": callback, "event_types": []string{"message", "subscribed", "unsubscribed"},
-			"send_name": true, "send_photo": false,
-		})
-		headers := http.Header{"X-Viber-Auth-Token": {credentials.Values["auth_token"]}}
-		var response struct {
-			Status        int    `json:"status"`
-			StatusMessage string `json:"status_message"`
-		}
-		if err := service.jsonRequest(ctx, http.MethodPost,
-			"https://chatapi.viber.com/pa/set_webhook", headers, body, &response); err != nil {
-			return "error", err
-		}
-		if response.Status != 0 {
-			return "error", errors.New(response.StatusMessage)
-		}
-		return "connected", nil
 	case "youtube":
 		values := url.Values{
 			"hub.callback": {callback},
@@ -204,32 +126,6 @@ func (service Service) Deactivate(
 		callback += "?token=" + url.QueryEscape(credentials.Values["hook_secret"])
 	}
 	switch connection.ConnectorID {
-	case "telegram":
-		endpoint := "https://api.telegram.org/bot" +
-			url.PathEscape(credentials.Values["bot_token"]) + "/deleteWebhook"
-		var response struct {
-			OK          bool   `json:"ok"`
-			Description string `json:"description"`
-		}
-		if err := service.jsonRequest(ctx, http.MethodPost, endpoint, nil, []byte(`{}`), &response); err != nil {
-			return err
-		}
-		if !response.OK {
-			return errors.New(response.Description)
-		}
-	case "viber":
-		headers := http.Header{"X-Viber-Auth-Token": {credentials.Values["auth_token"]}}
-		var response struct {
-			Status        int    `json:"status"`
-			StatusMessage string `json:"status_message"`
-		}
-		if err := service.jsonRequest(ctx, http.MethodPost,
-			"https://chatapi.viber.com/pa/set_webhook", headers, []byte(`{"url":""}`), &response); err != nil {
-			return err
-		}
-		if response.Status != 0 {
-			return errors.New(response.StatusMessage)
-		}
 	case "youtube":
 		if !strings.HasPrefix(strings.ToLower(service.PublicURL), "https://") {
 			return nil
@@ -267,72 +163,6 @@ func VerifyAndNormalize(
 	body []byte,
 ) (NormalizedEvent, error) {
 	switch connection.ConnectorID {
-	case "telegram":
-		if !constantEqual(headers.Get("X-Telegram-Bot-Api-Secret-Token"),
-			credentials.Values["webhook_secret"]) {
-			return NormalizedEvent{}, errors.New("invalid Telegram webhook secret")
-		}
-		var update struct {
-			UpdateID int64 `json:"update_id"`
-			Message  *struct {
-				MessageID int64  `json:"message_id"`
-				Text      string `json:"text"`
-				Chat      struct {
-					ID int64 `json:"id"`
-				} `json:"chat"`
-				From struct {
-					ID        int64  `json:"id"`
-					FirstName string `json:"first_name"`
-					Username  string `json:"username"`
-				} `json:"from"`
-			} `json:"message"`
-		}
-		if err := json.Unmarshal(body, &update); err != nil || update.Message == nil {
-			return NormalizedEvent{}, errors.New("unsupported Telegram update")
-		}
-		subject := strings.TrimSpace(update.Message.From.FirstName)
-		if update.Message.From.Username != "" {
-			subject = "@" + update.Message.From.Username
-		}
-		return NormalizedEvent{
-			ExternalID: strconv.FormatInt(update.UpdateID, 10), EventType: "telegram.message",
-			Subject: subject, Body: update.Message.Text,
-			Metadata: map[string]any{
-				"connector": "telegram", "chat_id": update.Message.Chat.ID,
-				"sender_id": update.Message.From.ID,
-			},
-		}, nil
-	case "viber":
-		mac := hmac.New(sha256.New, []byte(credentials.Values["auth_token"]))
-		_, _ = mac.Write(body)
-		expected, err := hex.DecodeString(headers.Get("X-Viber-Content-Signature"))
-		if err != nil || !hmac.Equal(mac.Sum(nil), expected) {
-			return NormalizedEvent{}, errors.New("invalid Viber signature")
-		}
-		var event struct {
-			Event        string `json:"event"`
-			MessageToken int64  `json:"message_token"`
-			Sender       struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
-			} `json:"sender"`
-			Message struct {
-				Text string `json:"text"`
-				Type string `json:"type"`
-			} `json:"message"`
-		}
-		if err := json.Unmarshal(body, &event); err != nil {
-			return NormalizedEvent{}, errors.New("invalid Viber callback")
-		}
-		message := event.Message.Text
-		if message == "" {
-			message = "Viber event: " + event.Event
-		}
-		return NormalizedEvent{
-			ExternalID: strconv.FormatInt(event.MessageToken, 10), EventType: "viber." + event.Event,
-			Subject: event.Sender.Name, Body: message,
-			Metadata: map[string]any{"connector": "viber", "sender_id": event.Sender.ID},
-		}, nil
 	case "youtube":
 		var feed struct {
 			Entries []struct {
@@ -412,9 +242,4 @@ func (service Service) client() *http.Client {
 		return service.Client
 	}
 	return &http.Client{Timeout: 10 * time.Second}
-}
-
-func constantEqual(left, right string) bool {
-	return len(left) == len(right) &&
-		subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }

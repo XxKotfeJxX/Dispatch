@@ -6,13 +6,13 @@ test('console shell renders', async ({page})=>{
  await expect(page.getByText('Dispatch')).toBeVisible()
 })
 
-test('integrations catalog exposes one-click and advanced connector flows', async ({page})=>{
+test('integrations catalog uses branded one-click cards and separates developer tools', async ({page})=>{
  await page.route('**/api/v1/connectors', route=>route.fulfill({json:{data:[
   {id:'demo',name:'Demo source',summary:'Generate a safe sample event.',category:'Testing',auth:'none',transport:'internal',availability:'available',configured:true,capabilities:['sample events'],fields:null,setup_hint:'Ready.'},
-  {id:'telegram',name:'Telegram',summary:'Receive bot messages.',category:'Messaging',auth:'bot_token',transport:'webhook',availability:'available',configured:false,capabilities:['bot messages'],fields:[{name:'bot_token',label:'Bot token',type:'password',required:true,secret:true}],setup_hint:'Public HTTPS required.'},
   {id:'discord',name:'Discord',summary:'Receive allowlisted bot messages.',category:'Messaging',auth:'app_install',transport:'gateway',availability:'setup_required',configured:false,capabilities:['Gateway'],fields:null,setup_hint:'Set DISCORD_CLIENT_ID first.'},
   {id:'github',name:'GitHub',summary:'Receive repository events.',category:'Development',auth:'app_install',transport:'webhook',availability:'setup_required',configured:false,capabilities:['issues'],fields:null,setup_hint:'Set GITHUB_APP_SLUG first.'},
   {id:'google',name:'Google / Gmail',summary:'Receive Gmail changes.',category:'Productivity',auth:'oauth2',transport:'webhook',availability:'setup_required',configured:false,capabilities:['OAuth 2.0'],fields:null,setup_hint:'Set Google OAuth credentials first.'},
+  {id:'youtube',name:'YouTube',summary:'Receive channel updates.',category:'Media',auth:'none',transport:'websub',availability:'available',configured:true,capabilities:['uploads'],fields:[{name:'channel_id',label:'Channel ID',type:'text',required:true,secret:false}],setup_hint:'Ready.'},
   {id:'webhook',name:'Universal webhook',summary:'Any JSON producer.',category:'Advanced',auth:'api_key',transport:'webhook',availability:'available',configured:true,capabilities:['HMAC'],fields:[],setup_hint:'Advanced fallback.'},
  ],connections:[]}}))
  await page.route('**/api/v1/sources', route=>route.fulfill({json:{data:[{
@@ -29,17 +29,24 @@ test('integrations catalog exposes one-click and advanced connector flows', asyn
  }]}}))
  await page.goto('/integrations')
  await expect(page.getByRole('heading',{name:'Integrations'})).toBeVisible()
- await expect(page.getByText('Demo source')).toBeVisible()
- await page.getByRole('button',{name:'Connect'}).first().click()
+ await expect(page.getByRole('button',{name:'Connect Discord'})).toBeVisible()
+ await expect(page.getByRole('button',{name:'Connect GitHub'})).toBeVisible()
+ await expect(page.getByRole('button',{name:'Connect Google / Gmail'})).toBeVisible()
+ await expect(page.getByRole('button',{name:'Connect YouTube'})).toBeVisible()
+ await expect(page.getByRole('button',{name:/Telegram|Viber|ChatGPT/})).toHaveCount(0)
+ await page.getByRole('button',{name:'Connect GitHub'}).hover()
+ await expect(page.getByText('GitHub').last()).toBeVisible()
+ await page.getByRole('button',{name:'About GitHub'}).hover()
+ await expect(page.getByText('Receive repository events.')).toBeVisible()
+ await page.getByRole('button',{name:'Connect Discord'}).click()
+ await expect(page.getByRole('heading',{name:'Discord'}).last()).toBeVisible()
+ await expect(page.getByText(/do not need to enter tokens/)).toBeVisible()
+ await page.getByRole('button',{name:'Close availability message'}).click()
+ await page.getByRole('button',{name:'Test Dispatch'}).click()
  await expect(page.locator('form').getByRole('heading',{name:'Demo source'})).toBeVisible()
- await expect(page.getByRole('button',{name:'Verify and connect'})).toBeVisible()
+ await expect(page.getByRole('button',{name:'Connect',exact:true})).toBeVisible()
  await page.getByRole('button',{name:'Close'}).click()
- const discordCard=page.getByRole('heading',{name:'Discord'}).locator('xpath=ancestor::article')
- await discordCard.getByRole('button',{name:'View setup'}).click()
- await expect(page.getByRole('heading',{name:'Configure a Discord application first'})).toBeVisible()
- await page.getByRole('button',{name:'Close setup'}).click()
- const webhookCard=page.getByRole('heading',{name:'Universal webhook'}).locator('xpath=ancestor::article')
- await webhookCard.getByRole('button',{name:'Open builder'}).click()
+ await page.getByRole('button',{name:'Developer tools'}).click()
  await expect(page.getByText('GitHub production')).toBeVisible()
  await expect(page.getByText('/ingest/v1/github-production')).toBeVisible()
  await expect(page.getByRole('option',{name:/discord/})).toBeAttached()
