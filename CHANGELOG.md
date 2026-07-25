@@ -15,6 +15,11 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 - Manual webhook Sources moved under Integrations as an advanced fallback instead of the primary setup flow.
 - Local console access no longer asks for an API key by default; exposed deployments can opt into the legacy single-key protection with `CONSOLE_AUTH_ENABLED=true`.
+- Connector cards now open an actionable setup guide when deployment credentials are missing, and the Universal Webhook card opens its source builder directly.
+
+### Fixed
+
+- Prevented the Demo connector modal from crashing when a connector has no credential fields.
 
 ## [1.1.0] - 2026-07-25
 

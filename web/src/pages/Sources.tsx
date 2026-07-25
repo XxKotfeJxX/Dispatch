@@ -25,11 +25,11 @@ const providerHelp:Record<string,string>={
   grafana:'Grafana alert webhooks',
 }
 
-export default function Sources(){
+export default function Sources({startOpen=false}:{startOpen?:boolean}){
   const client=useQueryClient()
   const sources=useQuery({queryKey:['sources'],queryFn:()=>api<{data:Source[];providers:string[]}>('/sources')})
   const recipients=useQuery({queryKey:['recipients'],queryFn:()=>api<{data:Recipient[]}>('/recipients')})
-  const [showCreate,setShowCreate]=useState(false),[created,setCreated]=useState<Created|null>(null),[copied,setCopied]=useState(false)
+  const [showCreate,setShowCreate]=useState(startOpen),[created,setCreated]=useState<Created|null>(null),[copied,setCopied]=useState(false)
   const [form,setForm]=useState({name:'',slug:'',provider:'generic',recipient_id:'',channels:'email',secret:'',id_path:'',event_type_path:'',subject_path:'',body_path:''})
   const update=(key:string,value:string)=>setForm(previous=>({...previous,[key]:value}))
   const create=useMutation({
@@ -50,6 +50,7 @@ export default function Sources(){
   const curl=useMemo(()=>created?`curl -X POST "${endpoint}" \\\n  -H "Authorization: Bearer ${created.data.secret}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"id":"test-001","event_type":"manual.test","subject":"Ingress works","body":"Hello from any source"}'`:'',[created,endpoint])
   if(sources.isLoading||recipients.isLoading)return <Loading/>
   if(sources.error)return <Failure error={sources.error}/>
+  if(recipients.error)return <Failure error={recipients.error}/>
   return <div className="space-y-6">
     <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="mb-1 text-xs font-semibold uppercase tracking-[.2em] text-cyan-400">Universal ingress</p><h1>Sources</h1><p className="muted mt-1">Accept authenticated events from almost any webhook-capable system.</p></div><button className="btn" onClick={()=>setShowCreate(!showCreate)}><Plus size={16}/>New source</button></div>
     {created&&<section className="panel border-cyan-400/25 bg-cyan-400/[.04]"><div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><KeyRound size={18} className="text-cyan-300"/><h2>{created.data.secret?'Save this secret now':'Source configured'}</h2></div><p className="muted mt-2">{created.warning}</p></div><button aria-label="Dismiss secret" className="text-slate-500" onClick={()=>setCreated(null)}>×</button></div><div className="mt-5 grid gap-3"><div><label className="text-xs text-slate-500">Endpoint</label><code className="mt-1 block overflow-auto rounded-lg bg-black/25 p-3 text-sm text-cyan-200">{endpoint}</code></div>{created.data.secret&&<div><label className="text-xs text-slate-500">Secret</label><div className="mt-1 flex gap-2"><code className="block flex-1 overflow-auto rounded-lg bg-black/25 p-3 text-sm text-amber-200">{created.data.secret}</code><button className="btn-secondary" onClick={async()=>{await navigator.clipboard.writeText(created.data.secret);setCopied(true)}}>{copied?<Check size={16}/>:<Clipboard size={16}/>}</button></div></div>}{created.data.source.auth_mode==='bearer'&&created.data.secret&&<div><label className="text-xs text-slate-500">Ready-to-run test</label><pre className="mt-1 overflow-auto rounded-lg bg-black/25 p-4 text-xs leading-6 text-slate-300">{curl}</pre></div>}</div></section>}

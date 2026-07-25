@@ -110,6 +110,11 @@ func Catalog(cfg config.ConnectorConfig) []Manifest {
 			Documentation: "https://github.com/XxKotfeJxX/Dispatch/blob/dev/docs/ingress.md",
 		},
 	}
+	for index := range result {
+		if result[index].Fields == nil {
+			result[index].Fields = []Field{}
+		}
+	}
 	return result
 }
 
