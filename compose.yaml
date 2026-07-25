@@ -28,6 +28,7 @@ services:
     environment:
       DATABASE_URL: postgres://dispatch:dispatch@postgres:5432/dispatch?sslmode=disable
       API_ADDR: :8080
+      CONSOLE_AUTH_ENABLED: ${CONSOLE_AUTH_ENABLED:-false}
       API_KEY: ${API_KEY:-dispatch-local-development-key}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8090}
       DEMO_SEED: ${DEMO_SEED:-true}

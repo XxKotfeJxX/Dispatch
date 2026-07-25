@@ -14,6 +14,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ### Changed
 
 - Manual webhook Sources moved under Integrations as an advanced fallback instead of the primary setup flow.
+- Local console access no longer asks for an API key by default; exposed deployments can opt into the legacy single-key protection with `CONSOLE_AUTH_ENABLED=true`.
 
 ## [1.1.0] - 2026-07-25
 

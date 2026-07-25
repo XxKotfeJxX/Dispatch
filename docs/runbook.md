@@ -25,7 +25,9 @@ Back up PostgreSQL with `pg_dump` and protect the archive like production messag
 
 ## Key rotation
 
-Update `API_KEY` and provider secrets in the deployment secret store, then restart API and worker containers. The web console key is held only in the current tab's JavaScript memory and is cleared on reload.
+Local development uses `CONSOLE_AUTH_ENABLED=false` and does not require a console credential. Before exposing Dispatch beyond a trusted local network, set `CONSOLE_AUTH_ENABLED=true`, configure a unique `API_KEY` with at least 16 characters, and restart the API. When enabled, the web console key is held only in the current tab's JavaScript memory and is cleared on reload.
+
+Rotate an enabled `API_KEY` in the deployment secret store and restart the API. Existing browser tabs must enter the new value.
 
 `INGRESS_ENCRYPTION_KEY` protects recoverable signing secrets in PostgreSQL. Back it up together with the deployment secrets and do not casually rotate it. If it changes, rotate every HMAC, Slack, and Stripe source secret and update the corresponding producer.
 

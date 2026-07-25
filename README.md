@@ -51,7 +51,7 @@ curl -X POST http://localhost:8090/api/v1/notifications \
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Set a stable, independent `INGRESS_ENCRYPTION_KEY` before creating signed sources. AI is off by default. To enable advisory routing, set `AI_ENABLED=true` and `GEMINI_API_KEY`. The default stable model is `gemini-3.5-flash-lite`.
+Copy `.env.example` to `.env`. Local console access does not require a key by default. Before exposing Dispatch outside a trusted local network, set `CONSOLE_AUTH_ENABLED=true` and a unique `API_KEY` of at least 16 characters. Set a stable, independent `INGRESS_ENCRYPTION_KEY` before creating signed sources. AI is off by default. To enable advisory routing, set `AI_ENABLED=true` and `GEMINI_API_KEY`. The default stable model is `gemini-3.5-flash-lite`.
 
 For local webhook targets, `WEBHOOK_ALLOW_PRIVATE=true` is an explicit development-only escape hatch.
 

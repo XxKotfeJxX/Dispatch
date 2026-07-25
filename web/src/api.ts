@@ -1,5 +1,5 @@
 const base = import.meta.env.VITE_API_URL ?? ''
-let currentAPIKey = 'dispatch-local-development-key'
+let currentAPIKey = ''
 
 export function apiKey() {
   return currentAPIKey
@@ -10,9 +10,11 @@ export function setApiKey(value: string) {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {'Content-Type': 'application/json'}
+  if (apiKey()) headers['X-API-Key'] = apiKey()
   const response = await fetch(`${base}/api/v1${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey(), ...options.headers },
+    headers: {...headers, ...options.headers},
   })
   if (response.status === 401) window.dispatchEvent(new Event('dispatch:unauthorized'))
   if (!response.ok) {

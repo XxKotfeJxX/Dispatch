@@ -2,7 +2,7 @@
 
 | Asset | Threat | Control |
 |---|---|---|
-| API and message data | Unauthorized access | Constant-time API-key comparison, in-memory-only console credential, CORS allowlist, request size limit, rate limit, TLS deployment guidance |
+| API and message data | Unauthorized access | Trusted-local mode by default; deployments exposed beyond localhost must enable constant-time API-key authentication, use a CORS allowlist, request limits, rate limits, and TLS |
 | Ingress endpoints | Forged or replayed events | Per-source credentials, raw-body signature verification, constant-time comparisons, timestamp windows for Slack/Stripe, source-scoped event deduplication, global request size/rate limits |
 | Ingress signing secrets | Database disclosure | AES-GCM encryption under a deployment key separate from the database; bearer/custom-header secrets are stored only as hashes; secrets shown once |
 | Connector credentials | Token disclosure or confused OAuth callback | AES-GCM credential envelope, credentials never returned by list APIs, expiring single-use OAuth state, PKCE, exact redirect URI, provider timeouts, no token/payload logging |
@@ -17,3 +17,5 @@
 | Database | Injection | Parameterized pgx queries and fixed filter clauses |
 
 Residual risk: GitHub-compatible HMAC does not include a trusted timestamp, so replay protection depends on the provider delivery ID and Dispatch deduplication. At-least-once processing may repeat an external side effect if a delivery provider accepts a request but its response is lost. Provider idempotency identifiers and reconciliation are required.
+
+`CONSOLE_AUTH_ENABLED=false` intentionally leaves the administrative API open. It is suitable only for local testing or a separately authenticated private network and is not a piracy-control mechanism.

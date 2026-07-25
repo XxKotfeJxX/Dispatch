@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Dispatch API
   version: 1.2.0
-  description: Self-hosted notification orchestration, managed connector, and universal ingress API.
+  description: Self-hosted notification orchestration, managed connector, and universal ingress API. API-key security applies when CONSOLE_AUTH_ENABLED=true; trusted-local mode is the development default.
 servers:
   - url: http://localhost:8090
 security:

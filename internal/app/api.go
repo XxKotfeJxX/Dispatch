@@ -341,6 +341,7 @@ func (api *API) dashboard(writer http.ResponseWriter, request *http.Request) {
 func (api *API) settings(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, 200, map[string]any{"data": map[string]any{
 		"version":  buildinfo.Version,
+		"auth":     map[string]bool{"enabled": api.Config.ConsoleAuthEnabled},
 		"ai":       map[string]any{"enabled": api.Config.AI.Enabled, "model": api.Config.AI.Model, "prompt_version": api.Config.AI.PromptVersion},
 		"channels": map[string]bool{"email": api.Config.SMTP.Host != "", "telegram": api.Config.Telegram.Token != "", "webhook": api.Config.Webhook.Enabled},
 		"connectors": map[string]bool{
@@ -420,6 +421,10 @@ func (api *API) metrics(writer http.ResponseWriter, _ *http.Request) {
 
 func (api *API) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !api.Config.ConsoleAuthEnabled {
+			next.ServeHTTP(writer, request)
+			return
+		}
 		provided := strings.TrimSpace(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "))
 		if provided == "" {
 			provided = request.Header.Get("X-API-Key")

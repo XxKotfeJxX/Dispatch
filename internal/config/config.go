@@ -9,24 +9,25 @@ import (
 )
 
 type Config struct {
-	DatabaseURL       string
-	APIAddr           string
-	APIKey            string
-	WebOrigin         string
-	MaxRequestBytes   int64
-	RateLimitPerMin   int
-	WorkerID          string
-	WorkerConcurrency int
-	JobPollInterval   time.Duration
-	JobLockTimeout    time.Duration
-	ProviderTimeout   time.Duration
-	AI                AIConfig
-	SMTP              SMTPConfig
-	Telegram          TelegramConfig
-	Webhook           WebhookConfig
-	Ingress           IngressConfig
-	Connectors        ConnectorConfig
-	DemoSeed          bool
+	DatabaseURL        string
+	APIAddr            string
+	ConsoleAuthEnabled bool
+	APIKey             string
+	WebOrigin          string
+	MaxRequestBytes    int64
+	RateLimitPerMin    int
+	WorkerID           string
+	WorkerConcurrency  int
+	JobPollInterval    time.Duration
+	JobLockTimeout     time.Duration
+	ProviderTimeout    time.Duration
+	AI                 AIConfig
+	SMTP               SMTPConfig
+	Telegram           TelegramConfig
+	Webhook            WebhookConfig
+	Ingress            IngressConfig
+	Connectors         ConnectorConfig
+	DemoSeed           bool
 }
 
 type AIConfig struct {
@@ -74,18 +75,19 @@ type ConnectorConfig struct {
 
 func Load() (Config, error) {
 	config := Config{
-		DatabaseURL:       env("DATABASE_URL", "postgres://dispatch:dispatch@localhost:5432/dispatch?sslmode=disable"),
-		APIAddr:           env("API_ADDR", ":8080"),
-		APIKey:            env("API_KEY", "dispatch-local-development-key"),
-		WebOrigin:         env("WEB_ORIGIN", "http://localhost:5173"),
-		MaxRequestBytes:   envInt64("MAX_REQUEST_BYTES", 1<<20),
-		RateLimitPerMin:   envInt("RATE_LIMIT_PER_MINUTE", 120),
-		WorkerID:          env("WORKER_ID", "dispatch-worker-1"),
-		WorkerConcurrency: envInt("WORKER_CONCURRENCY", 4),
-		JobPollInterval:   envDuration("JOB_POLL_INTERVAL", 500*time.Millisecond),
-		JobLockTimeout:    envDuration("JOB_LOCK_TIMEOUT", 2*time.Minute),
-		ProviderTimeout:   envDuration("PROVIDER_TIMEOUT", 10*time.Second),
-		DemoSeed:          envBool("DEMO_SEED", false),
+		DatabaseURL:        env("DATABASE_URL", "postgres://dispatch:dispatch@localhost:5432/dispatch?sslmode=disable"),
+		APIAddr:            env("API_ADDR", ":8080"),
+		ConsoleAuthEnabled: envBool("CONSOLE_AUTH_ENABLED", false),
+		APIKey:             env("API_KEY", "dispatch-local-development-key"),
+		WebOrigin:          env("WEB_ORIGIN", "http://localhost:5173"),
+		MaxRequestBytes:    envInt64("MAX_REQUEST_BYTES", 1<<20),
+		RateLimitPerMin:    envInt("RATE_LIMIT_PER_MINUTE", 120),
+		WorkerID:           env("WORKER_ID", "dispatch-worker-1"),
+		WorkerConcurrency:  envInt("WORKER_CONCURRENCY", 4),
+		JobPollInterval:    envDuration("JOB_POLL_INTERVAL", 500*time.Millisecond),
+		JobLockTimeout:     envDuration("JOB_LOCK_TIMEOUT", 2*time.Minute),
+		ProviderTimeout:    envDuration("PROVIDER_TIMEOUT", 10*time.Second),
+		DemoSeed:           envBool("DEMO_SEED", false),
 		AI: AIConfig{
 			Enabled:         envBool("AI_ENABLED", false),
 			APIKey:          strings.TrimSpace(os.Getenv("GEMINI_API_KEY")),
@@ -127,7 +129,7 @@ func Load() (Config, error) {
 	if config.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
-	if config.APIKey == "" || len(config.APIKey) < 16 {
+	if config.ConsoleAuthEnabled && (config.APIKey == "" || len(config.APIKey) < 16) {
 		return Config{}, fmt.Errorf("API_KEY must contain at least 16 characters")
 	}
 	if config.AI.Enabled && config.AI.APIKey == "" {
