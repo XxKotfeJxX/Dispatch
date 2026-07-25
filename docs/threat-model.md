@@ -3,6 +3,12 @@
 | Asset | Threat | Control |
 |---|---|---|
 | API and message data | Unauthorized access | Constant-time API-key comparison, in-memory-only console credential, CORS allowlist, request size limit, rate limit, TLS deployment guidance |
+| Ingress endpoints | Forged or replayed events | Per-source credentials, raw-body signature verification, constant-time comparisons, timestamp windows for Slack/Stripe, source-scoped event deduplication, global request size/rate limits |
+| Ingress signing secrets | Database disclosure | AES-GCM encryption under a deployment key separate from the database; bearer/custom-header secrets are stored only as hashes; secrets shown once |
+| Connector credentials | Token disclosure or confused OAuth callback | AES-GCM credential envelope, credentials never returned by list APIs, expiring single-use OAuth state, PKCE, exact redirect URI, provider timeouts, no token/payload logging |
+| Connector callbacks | Forged or duplicate provider events | Telegram callback secret, Viber HMAC, per-connection YouTube callback token plus channel binding, connector/event unique key, global body and rate limits |
+| Connector lifecycle | Orphaned external subscriptions | Deactivation before disable/delete, visible action-required/error states, explicit retry and sample-delivery controls |
+| Discord bridge | Untrusted users or channels | Mandatory user allowlist, optional channel allowlist, bot-message rejection, privileged Message Content intent disabled by default, payload-free logs |
 | Provider credentials | Disclosure | Environment-only configuration, settings expose readiness only, log messages omit payloads and secrets |
 | Internal network | Webhook SSRF | HTTP(S)-only parsing, no URL credentials/fragments, DNS resolution, private/loopback/link-local blocking |
 | Queue integrity | Duplicate or lost work | Atomic enqueue, unique idempotency keys, row locks with `SKIP LOCKED`, stale lock recovery |
@@ -10,4 +16,4 @@
 | Routing | Prompt injection or invalid AI output | Metadata allowlist, instructions separated from untrusted content, structured schema, validation, confidence gate, deterministic precedence and fallback |
 | Database | Injection | Parameterized pgx queries and fixed filter clauses |
 
-Residual risk: at-least-once processing may repeat an external side effect if a provider accepts a request but its response is lost. Provider idempotency identifiers and reconciliation are required.
+Residual risk: GitHub-compatible HMAC does not include a trusted timestamp, so replay protection depends on the provider delivery ID and Dispatch deduplication. At-least-once processing may repeat an external side effect if a delivery provider accepts a request but its response is lost. Provider idempotency identifiers and reconciliation are required.

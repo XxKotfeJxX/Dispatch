@@ -1,6 +1,6 @@
 # Dispatch
 
-Dispatch is a self-hosted notification orchestration service. It accepts an event once, chooses eligible channels through deterministic policy with optional Gemini advice, and delivers through email, Telegram, or webhooks with durable scheduling, retries, and a complete audit trail.
+Dispatch is a self-hosted notification orchestration service. It accepts events through managed connectors, its API, or authenticated universal ingress, chooses eligible channels through deterministic policy with optional Gemini advice, and delivers through email, Telegram, or webhooks with durable scheduling, retries, and a complete audit trail.
 
 The product is a single-tenant modular monolith: a Go API and worker share PostgreSQL as the source of truth, while a React operations console exposes routing and delivery state.
 
@@ -45,13 +45,17 @@ curl -X POST http://localhost:8090/api/v1/notifications \
 - AI output is schema-validated; timeout, invalid output, low confidence, or disabled AI uses deterministic fallback.
 - Bounded retries end in an inspectable dead-letter state.
 - Webhook destinations reject loopback, private, link-local, and unsafe URLs by default.
+- Ingress sources use per-source bearer, custom-header, HMAC, Slack, or Stripe authentication and payload-level deduplication.
+- Managed connections share encrypted credentials, OAuth state/PKCE, health tests, pause/disconnect controls, and sample delivery.
 - Secrets are environment-only and never returned by the settings API.
 
 ## Configuration
 
-Copy `.env.example` to `.env`. AI is off by default. To enable advisory routing, set `AI_ENABLED=true` and `GEMINI_API_KEY`. The default stable model is `gemini-3.5-flash-lite`.
+Copy `.env.example` to `.env`. Set a stable, independent `INGRESS_ENCRYPTION_KEY` before creating signed sources. AI is off by default. To enable advisory routing, set `AI_ENABLED=true` and `GEMINI_API_KEY`. The default stable model is `gemini-3.5-flash-lite`.
 
 For local webhook targets, `WEBHOOK_ALLOW_PRIVATE=true` is an explicit development-only escape hatch.
+
+Open **Integrations** in the console for the connector catalog and one-click test flow. Telegram, Discord, Viber, GitHub, Google, YouTube, Demo, and the Universal Webhook fallback expose their real deployment requirements before connection. See [Managed connectors](docs/connectors.md) and [Universal ingress](docs/ingress.md).
 
 ## Development
 
@@ -61,10 +65,10 @@ make build
 cd web && pnpm install && pnpm test && pnpm build
 ```
 
-Architecture and operational guidance live in [`docs/architecture.md`](docs/architecture.md), [`docs/runbook.md`](docs/runbook.md), and [`docs/threat-model.md`](docs/threat-model.md). The API contract is [`docs/openapi.yaml`](docs/openapi.yaml).
+Architecture and operational guidance live in [`docs/architecture.md`](docs/architecture.md), [`docs/connectors.md`](docs/connectors.md), [`docs/ingress.md`](docs/ingress.md), [`docs/runbook.md`](docs/runbook.md), and [`docs/threat-model.md`](docs/threat-model.md). The API contract is [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ## Project status
 
-Dispatch v1.0 covers the supported product scope. Redis, Kafka, Kubernetes, OAuth, multi-tenancy, SMS, and alternate AI providers are intentionally out of scope.
+Dispatch v1.2 adds the managed connector platform. Redis, Kafka, Kubernetes, multi-tenancy, SMS, and alternate AI providers remain intentionally out of scope.
 
 Licensed under the MIT License.

@@ -1,14 +1,207 @@
 openapi: 3.1.0
 info:
   title: Dispatch API
-  version: 1.0.0
-  description: Self-hosted notification orchestration API.
+  version: 1.2.0
+  description: Self-hosted notification orchestration, managed connector, and universal ingress API.
 servers:
-  - url: http://localhost:8090/api/v1
+  - url: http://localhost:8090
 security:
   - apiKey: []
 paths:
-  /notifications:
+  /connect/v1/oauth/{connector}/callback:
+    get:
+      security: []
+      summary: Consume a provider OAuth callback and redirect to the Integrations UI
+      parameters:
+        - {name: connector, in: path, required: true, schema: {type: string}}
+        - {name: code, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string}}
+        - {name: error, in: query, schema: {type: string}}
+      responses:
+        "303": {description: OAuth result redirect}
+  /connect/v1/hooks/{id}:
+    get:
+      security: []
+      summary: Verify a WebSub callback
+      parameters:
+        - {$ref: "#/components/parameters/ID"}
+        - {name: hub.challenge, in: query, schema: {type: string}}
+      responses:
+        "200": {description: Verification challenge}
+    post:
+      security: []
+      summary: Receive an authenticated managed-connector event
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {type: object, additionalProperties: true}}
+          application/atom+xml: {schema: {type: string}}
+      responses:
+        "200": {description: Event accepted or deduplicated}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/connectors:
+    get:
+      summary: List connector manifests and persisted connections
+      responses:
+        "200":
+          description: Connector catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {type: array, items: {$ref: "#/components/schemas/ConnectorManifest"}}
+                  connections: {type: array, items: {$ref: "#/components/schemas/ConnectorConnection"}}
+  /api/v1/connectors/{connector}/authorize:
+    post:
+      summary: Begin a state- and PKCE-protected connector OAuth flow
+      parameters:
+        - {name: connector, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, recipient_id]
+              properties:
+                name: {type: string}
+                recipient_id: {type: string}
+      responses:
+        "200": {description: Provider authorization URL}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/connections:
+    post:
+      summary: Verify credentials and create a managed connector connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateConnectorConnection"}
+      responses:
+        "201": {description: Connection created; credentials are not returned}
+        "400": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /api/v1/connections/{id}/test:
+    post:
+      summary: Recheck credentials and retry connector activation
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses:
+        "200": {description: Test result and activation state}
+        "502": {$ref: "#/components/responses/Error"}
+  /api/v1/connections/{id}/sample:
+    post:
+      summary: Send a sample event through the normal Dispatch delivery pipeline
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses:
+        "202": {description: Sample notification queued}
+  /api/v1/connections/{id}/enabled:
+    post:
+      summary: Activate or pause a connector and its external subscription
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties: {enabled: {type: boolean}}
+      responses:
+        "204": {description: Lifecycle state updated}
+        "502": {$ref: "#/components/responses/Error"}
+  /api/v1/connections/{id}:
+    delete:
+      summary: Deactivate and delete a connector connection
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses:
+        "204": {description: Disconnected}
+        "502": {$ref: "#/components/responses/Error"}
+  /ingest/v1/{slug}:
+    post:
+      security: []
+      summary: Authenticate, transform, and idempotently ingest a source event
+      parameters:
+        - {name: slug, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "202": {description: Notification created and queued}
+        "200": {description: Duplicate event or provider verification response}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/sources:
+    get:
+      summary: List universal ingress sources and available presets
+      responses:
+        "200":
+          description: Sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {type: array, items: {$ref: "#/components/schemas/IngressSource"}}
+                  providers: {type: array, items: {type: string}}
+    post:
+      summary: Create a source and return its secret once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateIngressSource"}
+      responses:
+        "201": {description: Source created; response includes the one-time secret}
+        "400": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/sources/{id}/rotate-secret:
+    post:
+      summary: Rotate a source secret and return the new value once
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                secret: {type: string, writeOnly: true, description: Required for Slack and Stripe}
+      responses:
+        "200": {description: Secret rotated}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/sources/{id}/enabled:
+    post:
+      summary: Enable or disable a source
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties: {enabled: {type: boolean}}
+      responses:
+        "204": {description: Updated}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/sources/{id}/events:
+    get:
+      summary: List recent accepted events for a source
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses:
+        "200": {description: Source event history}
+  /api/v1/sources/{id}:
+    delete:
+      summary: Delete a source and its ingress history
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses:
+        "204": {description: Deleted}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/notifications:
     get:
       summary: List notifications
       parameters:
@@ -32,24 +225,24 @@ paths:
         "202": {description: Created and queued}
         "200": {description: Existing idempotent result}
         "400": {$ref: "#/components/responses/Error"}
-  /notifications/{id}:
+  /api/v1/notifications/{id}:
     get:
       summary: Get notification, deliveries, attempts, AI records, and audit trail
       parameters: [{$ref: "#/components/parameters/ID"}]
       responses:
         "200": {description: Notification detail}
         "404": {$ref: "#/components/responses/Error"}
-  /notifications/{id}/cancel:
+  /api/v1/notifications/{id}/cancel:
     post:
       summary: Cancel pending work
       parameters: [{$ref: "#/components/parameters/ID"}]
       responses: {"204": {description: Cancelled}, "409": {$ref: "#/components/responses/Error"}}
-  /notifications/{id}/retry:
+  /api/v1/notifications/{id}/retry:
     post:
       summary: Retry a failed notification
       parameters: [{$ref: "#/components/parameters/ID"}]
       responses: {"202": {description: Retry queued}, "409": {$ref: "#/components/responses/Error"}}
-  /recipients:
+  /api/v1/recipients:
     get:
       summary: List recipients
       responses: {"200": {description: Recipients}}
@@ -57,7 +250,7 @@ paths:
       summary: Create recipient
       requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Recipient"}}}}
       responses: {"201": {description: Created}, "400": {$ref: "#/components/responses/Error"}}
-  /recipients/{id}:
+  /api/v1/recipients/{id}:
     get:
       summary: Get recipient
       parameters: [{$ref: "#/components/parameters/ID"}]
@@ -70,27 +263,27 @@ paths:
       summary: Delete recipient
       parameters: [{$ref: "#/components/parameters/ID"}]
       responses: {"204": {description: Deleted}}
-  /templates:
+  /api/v1/templates:
     get: {summary: List templates, responses: {"200": {description: Templates}}}
     post: {summary: Create template, responses: {"201": {description: Created}}}
-  /templates/{id}:
+  /api/v1/templates/{id}:
     put: {summary: Update template, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"200": {description: Updated}}}
     delete: {summary: Delete template, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"204": {description: Deleted}}}
-  /rules:
+  /api/v1/rules:
     get: {summary: List deterministic routing rules, responses: {"200": {description: Rules}}}
     post: {summary: Create routing rule, responses: {"201": {description: Created}}}
-  /rules/{id}:
+  /api/v1/rules/{id}:
     put: {summary: Update routing rule, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"200": {description: Updated}}}
     delete: {summary: Delete routing rule, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"204": {description: Deleted}}}
-  /dashboard:
+  /api/v1/dashboard:
     get: {summary: Get operational dashboard, responses: {"200": {description: Dashboard}}}
-  /settings:
+  /api/v1/settings:
     get: {summary: Get non-secret runtime readiness, responses: {"200": {description: Settings}}}
-  /events:
+  /api/v1/events:
     get:
       summary: Stream audit events with server-sent events
       responses: {"200": {description: Event stream, content: {text/event-stream: {schema: {type: string}}}}}
-  /ai/preview:
+  /api/v1/ai/preview:
     post:
       summary: Preview an advisory AI decision
       responses: {"200": {description: Decision}, "503": {$ref: "#/components/responses/Error"}}
@@ -112,6 +305,100 @@ components:
                 required: [code, message]
                 properties: {code: {type: string}, message: {type: string}}
   schemas:
+    ConnectorField:
+      type: object
+      required: [name, label, type, required, secret]
+      properties:
+        name: {type: string}
+        label: {type: string}
+        type: {type: string}
+        required: {type: boolean}
+        secret: {type: boolean}
+        placeholder: {type: string}
+        help: {type: string}
+    ConnectorManifest:
+      type: object
+      required: [id, name, summary, category, auth, transport, availability, configured, capabilities, fields]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        summary: {type: string}
+        category: {type: string}
+        auth: {type: string, enum: [none, bot_token, oauth2, app_install, api_key]}
+        transport: {type: string, enum: [internal, webhook, gateway, polling, websub]}
+        availability: {type: string, enum: [available, setup_required, limited, unavailable]}
+        configured: {type: boolean}
+        capabilities: {type: array, items: {type: string}}
+        fields: {type: array, items: {$ref: "#/components/schemas/ConnectorField"}}
+        setup_hint: {type: string}
+        documentation: {type: string}
+        authorization_url: {type: string, format: uri}
+    CreateConnectorConnection:
+      type: object
+      required: [connector_id, name, recipient_id]
+      properties:
+        connector_id: {type: string}
+        name: {type: string}
+        recipient_id: {type: string}
+        config: {type: object, additionalProperties: {type: string}}
+        credentials:
+          type: object
+          writeOnly: true
+          additionalProperties: {type: string}
+    ConnectorConnection:
+      type: object
+      required: [id, connector_id, name, recipient_id, status, config, enabled, created_at, updated_at]
+      properties:
+        id: {type: string}
+        connector_id: {type: string}
+        name: {type: string}
+        recipient_id: {type: string}
+        status: {type: string, enum: [connected, action_required, error, disabled]}
+        account_label: {type: string}
+        config: {type: object, additionalProperties: {type: string}}
+        token_expires_at: {type: [string, "null"], format: date-time}
+        last_tested_at: {type: [string, "null"], format: date-time}
+        last_event_at: {type: [string, "null"], format: date-time}
+        last_error: {type: string}
+        enabled: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    IngressMapping:
+      type: object
+      properties:
+        id_path: {type: string, example: id}
+        event_type_path: {type: string, example: event_type}
+        subject_path: {type: string, example: subject}
+        body_path: {type: string, example: body}
+        default_event_type: {type: string}
+        default_subject: {type: string}
+        requested_channels:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [email, telegram, webhook]}
+    CreateIngressSource:
+      type: object
+      required: [name, slug, provider, recipient_id]
+      properties:
+        name: {type: string}
+        slug: {type: string, pattern: "^[a-z0-9][a-z0-9-]{2,62}$"}
+        provider: {type: string, enum: [generic, github, gitlab, discord, slack, stripe, sentry, grafana]}
+        recipient_id: {type: string}
+        auth_mode: {type: string, enum: [bearer, header, hmac_sha256, slack_signature, stripe_signature]}
+        auth_header: {type: string}
+        secret: {type: string, writeOnly: true, description: Required when importing a Slack or Stripe signing secret}
+        mapping: {$ref: "#/components/schemas/IngressMapping"}
+    IngressSource:
+      allOf:
+        - {$ref: "#/components/schemas/CreateIngressSource"}
+        - type: object
+          required: [id, enabled, created_at, updated_at]
+          properties:
+            id: {type: string}
+            signature_header: {type: string, readOnly: true}
+            enabled: {type: boolean}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
     CreateNotification:
       type: object
       required: [idempotency_key, recipient_id, event_type, body]
