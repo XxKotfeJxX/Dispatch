@@ -24,6 +24,8 @@ type Config struct {
 	SMTP              SMTPConfig
 	Telegram          TelegramConfig
 	Webhook           WebhookConfig
+	Ingress           IngressConfig
+	Connectors        ConnectorConfig
 	DemoSeed          bool
 }
 
@@ -55,6 +57,19 @@ type WebhookConfig struct {
 	Enabled      bool
 	DefaultURL   string
 	AllowPrivate bool
+}
+
+type IngressConfig struct {
+	EncryptionKey string
+}
+
+type ConnectorConfig struct {
+	PublicURL          string
+	EncryptionKey      string
+	GitHubAppSlug      string
+	DiscordClientID    string
+	GoogleClientID     string
+	GoogleClientSecret string
 }
 
 func Load() (Config, error) {
@@ -93,6 +108,21 @@ func Load() (Config, error) {
 			Enabled: envBool("WEBHOOK_ENABLED", true), DefaultURL: strings.TrimSpace(os.Getenv("WEBHOOK_DEFAULT_URL")),
 			AllowPrivate: envBool("WEBHOOK_ALLOW_PRIVATE", false),
 		},
+		Ingress: IngressConfig{EncryptionKey: strings.TrimSpace(os.Getenv("INGRESS_ENCRYPTION_KEY"))},
+		Connectors: ConnectorConfig{
+			PublicURL:          strings.TrimRight(env("CONNECTOR_PUBLIC_URL", env("WEB_ORIGIN", "http://localhost:5173")), "/"),
+			EncryptionKey:      strings.TrimSpace(os.Getenv("CONNECTOR_ENCRYPTION_KEY")),
+			GitHubAppSlug:      strings.TrimSpace(os.Getenv("GITHUB_APP_SLUG")),
+			DiscordClientID:    strings.TrimSpace(os.Getenv("DISCORD_CLIENT_ID")),
+			GoogleClientID:     strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID")),
+			GoogleClientSecret: strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")),
+		},
+	}
+	if config.Ingress.EncryptionKey == "" {
+		config.Ingress.EncryptionKey = config.APIKey
+	}
+	if config.Connectors.EncryptionKey == "" {
+		config.Connectors.EncryptionKey = config.Ingress.EncryptionKey
 	}
 	if config.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")

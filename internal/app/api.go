@@ -49,6 +49,10 @@ func (api *API) Handler() http.Handler {
 	})
 	router.Get("/readyz", api.ready)
 	router.Get("/metrics", api.metrics)
+	router.With(api.rateLimit).Post("/ingest/v1/{slug}", api.receiveIngress)
+	router.With(api.rateLimit).Get("/connect/v1/oauth/{connector}/callback", api.connectorOAuthCallback)
+	router.With(api.rateLimit).Get("/connect/v1/hooks/{id}", api.connectorWebhook)
+	router.With(api.rateLimit).Post("/connect/v1/hooks/{id}", api.connectorWebhook)
 	router.Group(func(protected chi.Router) {
 		protected.Use(api.authenticate, api.rateLimit)
 		protected.Route("/api/v1", func(routes chi.Router) {
@@ -74,6 +78,19 @@ func (api *API) Handler() http.Handler {
 			routes.Put("/rules/{id}", api.updateRule)
 			routes.Delete("/rules/{id}", api.deleteRule)
 			routes.Post("/ai/preview", api.aiPreview)
+			routes.Get("/sources", api.listIngressSources)
+			routes.Post("/sources", api.createIngressSource)
+			routes.Post("/sources/{id}/rotate-secret", api.rotateIngressSecret)
+			routes.Post("/sources/{id}/enabled", api.setIngressSourceEnabled)
+			routes.Get("/sources/{id}/events", api.listIngressEvents)
+			routes.Delete("/sources/{id}", api.deleteIngressSource)
+			routes.Get("/connectors", api.listConnectors)
+			routes.Post("/connectors/{connector}/authorize", api.beginConnectorOAuth)
+			routes.Post("/connections", api.createConnectorConnection)
+			routes.Post("/connections/{id}/test", api.testConnectorConnection)
+			routes.Post("/connections/{id}/sample", api.connectorSample)
+			routes.Post("/connections/{id}/enabled", api.setConnectorEnabled)
+			routes.Delete("/connections/{id}", api.deleteConnectorConnection)
 		})
 	})
 	return router
@@ -323,9 +340,18 @@ func (api *API) dashboard(writer http.ResponseWriter, request *http.Request) {
 }
 func (api *API) settings(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, 200, map[string]any{"data": map[string]any{
-		"version":            buildinfo.Version,
-		"ai":                 map[string]any{"enabled": api.Config.AI.Enabled, "model": api.Config.AI.Model, "prompt_version": api.Config.AI.PromptVersion},
-		"channels":           map[string]bool{"email": api.Config.SMTP.Host != "", "telegram": api.Config.Telegram.Token != "", "webhook": api.Config.Webhook.Enabled},
+		"version":  buildinfo.Version,
+		"ai":       map[string]any{"enabled": api.Config.AI.Enabled, "model": api.Config.AI.Model, "prompt_version": api.Config.AI.PromptVersion},
+		"channels": map[string]bool{"email": api.Config.SMTP.Host != "", "telegram": api.Config.Telegram.Token != "", "webhook": api.Config.Webhook.Enabled},
+		"connectors": map[string]bool{
+			"public_https": strings.HasPrefix(
+				strings.ToLower(api.Config.Connectors.PublicURL), "https://",
+			),
+			"github_app":  api.Config.Connectors.GitHubAppSlug != "",
+			"discord_app": api.Config.Connectors.DiscordClientID != "",
+			"google_oauth": api.Config.Connectors.GoogleClientID != "" &&
+				api.Config.Connectors.GoogleClientSecret != "",
+		},
 		"worker_concurrency": api.Config.WorkerConcurrency,
 	}})
 }

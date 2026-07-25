@@ -1,4 +1,4 @@
-.PHONY: test test-race test-ai lint compose-up compose-down
+.PHONY: test test-race test-ai lint compose-up compose-up-discord compose-down
 
 test:
 	go test ./...
@@ -18,6 +18,9 @@ lint:
 
 compose-up:
 	docker compose up --build
+
+compose-up-discord:
+	docker compose --profile discord up --build
 
 compose-down:
 	docker compose down

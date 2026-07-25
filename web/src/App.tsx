@@ -1,5 +1,5 @@
-import { NavLink, Route, Routes } from 'react-router-dom'
-import { Activity, Bell, Bot, LayoutDashboard, Settings, Users, Waypoints } from 'lucide-react'
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
+import { Activity, Bell, Bot, LayoutDashboard, PlugZap, Settings, Users, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { setApiKey } from './api'
@@ -10,10 +10,12 @@ import Recipients from './pages/Recipients'
 import Rules from './pages/Rules'
 import Templates from './pages/Templates'
 import SettingsPage from './pages/Settings'
+import Integrations from './pages/Integrations'
 
 const navigation = [
   ['/', 'Overview', LayoutDashboard], ['/notifications', 'Notifications', Bell],
   ['/recipients', 'Recipients', Users], ['/rules', 'Routing rules', Waypoints],
+  ['/integrations', 'Integrations', PlugZap],
   ['/templates', 'Templates', Activity], ['/settings', 'Settings', Settings],
 ] as const
 
@@ -30,7 +32,7 @@ export default function App() {
     </aside>
     <main className="md:ml-64"><header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-white/8 bg-[#070b12]/85 px-5 backdrop-blur md:px-8"><span className="text-sm text-slate-500">Notification infrastructure</span><span className="badge">single tenant</span></header><div className="mx-auto max-w-7xl p-5 md:p-8"><Routes>
       <Route path="/" element={<Dashboard/>}/><Route path="/notifications" element={<Notifications/>}/><Route path="/notifications/:id" element={<NotificationDetail/>}/>
-      <Route path="/recipients" element={<Recipients/>}/><Route path="/rules" element={<Rules/>}/><Route path="/templates" element={<Templates/>}/><Route path="/settings" element={<SettingsPage/>}/>
+      <Route path="/recipients" element={<Recipients/>}/><Route path="/rules" element={<Rules/>}/><Route path="/integrations" element={<Integrations/>}/><Route path="/sources" element={<Navigate to="/integrations" replace/>}/><Route path="/templates" element={<Templates/>}/><Route path="/settings" element={<SettingsPage/>}/>
     </Routes></div></main>
     {authRequired&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-5 backdrop-blur-sm"><form className="panel w-full max-w-md" onSubmit={e=>{e.preventDefault();setApiKey(key);setKey('');setAuthRequired(false);client.invalidateQueries()}}><h2>Connect to Dispatch</h2><p className="muted mt-2">Enter the API key for this server. It stays only in this tab's memory.</p><input autoFocus autoComplete="off" type="password" className="field mt-5" placeholder="API key" value={key} onChange={e=>setKey(e.target.value)}/><button className="btn mt-3 w-full" disabled={!key.trim()}>Connect</button></form></div>}
   </div>
