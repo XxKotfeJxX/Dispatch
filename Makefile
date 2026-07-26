@@ -20,7 +20,7 @@ compose-up:
 	docker compose up --build
 
 compose-up-discord:
-	docker compose --profile discord up --build
+	docker compose up --build
 
 compose-down:
 	docker compose down

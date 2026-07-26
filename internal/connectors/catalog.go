@@ -10,8 +10,17 @@ import (
 func Catalog(cfg config.ConnectorConfig) []Manifest {
 	publicHTTPS := strings.HasPrefix(strings.ToLower(cfg.PublicURL), "https://")
 	googleReady := cfg.GoogleClientID != "" && cfg.GoogleClientSecret != ""
-	githubReady := cfg.GitHubAppSlug != ""
-	discordReady := cfg.DiscordClientID != ""
+	githubReady := cfg.GitHubAppSlug != "" && cfg.GitHubAppID > 0 &&
+		cfg.GitHubWebhookSecret != "" && cfg.GitHubPrivateKeyB64 != ""
+	githubHint := "Set the GitHub App slug, App ID, webhook secret, and private key."
+	if githubReady {
+		githubHint = "GitHub App is configured for one-click installation."
+		if !publicHTTPS {
+			githubHint = "Installation is configured; live events require public HTTPS or the development webhook proxy."
+		}
+	}
+	discordReady := cfg.DiscordClientID != "" && cfg.DiscordClientSecret != "" &&
+		cfg.DiscordBotToken != ""
 	telegramReady := cfg.TelegramAPIID > 0 && cfg.TelegramAPIHash != ""
 	result := []Manifest{
 		{
@@ -36,49 +45,43 @@ func Catalog(cfg config.ConnectorConfig) []Manifest {
 		},
 		{
 			ID: "discord", Name: "Discord", Category: "Messaging",
-			Summary: "Install the Dispatch bot and receive allowlisted Gateway events.",
-			Auth:    AuthAppInstall, Transport: TransportGateway, Availability: SetupRequired, Configured: discordReady,
+			Summary: "Authorize Dispatch, choose a server, and receive the message types you select.",
+			Auth:    AuthOAuth2, Transport: TransportGateway, Availability: SetupRequired, Configured: discordReady,
 			Capabilities: []string{"bot installation", "direct messages", "server channels", "Gateway"},
 			SetupHint: availabilityHint(discordReady,
-				"Discord application is configured; install the bot, then run the Gateway bridge.",
-				"Set DISCORD_CLIENT_ID and the existing Discord bridge credentials first."),
-			Documentation:    "https://docs.discord.com/developers/topics/oauth2",
-			AuthorizationURL: discordInstallURL(cfg.DiscordClientID),
+				"Ready for one-click Discord authorization and server installation.",
+				"Set DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, and DISCORD_BOT_TOKEN."),
+			Documentation: "https://docs.discord.com/developers/topics/oauth2",
 		},
 		{
 			ID: "github", Name: "GitHub", Category: "Development",
 			Summary: "Install a GitHub App once and receive repository or organization events.",
 			Auth:    AuthAppInstall, Transport: TransportWebhook, Availability: SetupRequired, Configured: githubReady,
-			Capabilities: []string{"repository events", "issues", "pull requests", "workflow events"},
-			SetupHint: availabilityHint(githubReady,
-				"GitHub App is configured and ready to install.",
-				"Create a GitHub App and set GITHUB_APP_SLUG; universal GitHub webhooks remain available."),
-			Documentation:    "https://docs.github.com/en/apps/creating-github-apps",
-			AuthorizationURL: githubInstallURL(cfg.GitHubAppSlug),
+			Capabilities:  []string{"repository events", "issues", "pull requests", "workflow events"},
+			SetupHint:     githubHint,
+			Documentation: "https://docs.github.com/en/apps/creating-github-apps",
 		},
 		{
-			ID: "google", Name: "Google / Gmail", Category: "Productivity",
-			Summary: "Authorize a Google account for Gmail change notifications.",
-			Auth:    AuthOAuth2, Transport: TransportWebhook, Availability: SetupRequired, Configured: googleReady,
-			Capabilities: []string{"OAuth 2.0", "Gmail mailbox watch", "token refresh"},
+			ID: "google", Name: "Google", Category: "Productivity",
+			Summary: "Connect Google once for Gmail, Calendar, Meet, Drive, Tasks, and Chat.",
+			Auth:    AuthOAuth2, Transport: TransportPolling, Availability: SetupRequired, Configured: googleReady,
+			Capabilities: []string{"Gmail", "Calendar and Meet", "Drive and editors", "Tasks", "Google Chat"},
 			SetupHint: availabilityHint(googleReady,
-				"OAuth is configured; Gmail Pub/Sub provisioning is the next activation step.",
+				"Ready for one Google authorization and modular background synchronization.",
 				"Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET."),
-			Documentation: "https://developers.google.com/workspace/gmail/api/guides/push",
+			Documentation: "https://developers.google.com/workspace",
 		},
 		{
 			ID: "youtube", Name: "YouTube", Category: "Media",
-			Summary: "Watch a channel for uploads and metadata changes through WebSub.",
-			Auth:    AuthNone, Transport: TransportWebSub, Availability: Available, Configured: true,
-			Capabilities: []string{"new uploads", "title changes", "description changes", "WebSub"},
-			Fields: []Field{{
-				Name: "channel_id", Label: "Channel ID", Type: "text", Required: true,
-				Placeholder: "UC…", Help: "The channel whose public video feed should be monitored.",
-			}},
-			SetupHint: availabilityHint(publicHTTPS,
-				"Ready to create a WebSub subscription.",
-				"Connection can be saved locally; live events require public HTTPS."),
-			Documentation: "https://developers.google.com/youtube/v3/guides/push_notifications",
+			Summary: "Sign in once and receive new videos from every channel you subscribe to.",
+			Auth:    AuthOAuth2, Transport: TransportPolling, Availability: SetupRequired, Configured: googleReady,
+			Capabilities: []string{
+				"personal subscriptions", "new uploads", "automatic channel sync", "local polling",
+			},
+			SetupHint: availabilityHint(googleReady,
+				"Ready to read YouTube subscriptions with Google authorization.",
+				"Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET."),
+			Documentation: "https://developers.google.com/youtube/v3/docs/subscriptions/list",
 		},
 		{
 			ID: "webhook", Name: "Universal webhook", Category: "Advanced",
@@ -113,29 +116,41 @@ func availabilityHint(configured bool, ready, missing string) string {
 	return missing
 }
 
-func githubInstallURL(slug string) string {
+func GitHubInstallURL(slug, state string) string {
 	if slug == "" {
 		return ""
 	}
-	return "https://github.com/apps/" + url.PathEscape(slug) + "/installations/new"
-}
-
-func discordInstallURL(clientID string) string {
-	if clientID == "" {
-		return ""
+	target := "https://github.com/apps/" + url.PathEscape(slug) + "/installations/new"
+	if state != "" {
+		target += "?state=" + url.QueryEscape(state)
 	}
-	query := url.Values{
-		"client_id":        {clientID},
-		"scope":            {"bot applications.commands"},
-		"permissions":      {"274877975552"},
-		"integration_type": {"0"},
-	}
-	return "https://discord.com/oauth2/authorize?" + query.Encode()
+	return target
 }
 
 func OAuthSpec(id string, cfg config.ConnectorConfig) (OAuthProvider, bool) {
-	if id != "google" || cfg.GoogleClientID == "" || cfg.GoogleClientSecret == "" {
+	if id == "discord" && cfg.DiscordClientID != "" && cfg.DiscordClientSecret != "" &&
+		cfg.DiscordBotToken != "" {
+		return OAuthProvider{
+			ID: id, ClientID: cfg.DiscordClientID, ClientSecret: cfg.DiscordClientSecret,
+			AuthorizeURL: "https://discord.com/oauth2/authorize",
+			TokenURL:     "https://discord.com/api/v10/oauth2/token",
+			UserInfoURL:  "https://discord.com/api/v10/users/@me",
+			RevokeURL:    "https://discord.com/api/v10/oauth2/token/revoke",
+			Scopes:       []string{"identify", "bot", "applications.commands"},
+			ExtraAuthorize: map[string]string{
+				"integration_type": "0",
+				"permissions":      "68608",
+				"prompt":           "consent",
+			},
+		}, true
+	}
+	if (id != "google" && id != "youtube") ||
+		cfg.GoogleClientID == "" || cfg.GoogleClientSecret == "" {
 		return OAuthProvider{}, false
+	}
+	scopes := []string{"openid", "email"}
+	if id == "youtube" {
+		scopes = append(scopes, "https://www.googleapis.com/auth/youtube.readonly")
 	}
 	return OAuthProvider{
 		ID: id, ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret,
@@ -143,10 +158,7 @@ func OAuthSpec(id string, cfg config.ConnectorConfig) (OAuthProvider, bool) {
 		TokenURL:     "https://oauth2.googleapis.com/token",
 		UserInfoURL:  "https://openidconnect.googleapis.com/v1/userinfo",
 		RevokeURL:    "https://oauth2.googleapis.com/revoke",
-		Scopes: []string{
-			"openid", "email",
-			"https://www.googleapis.com/auth/gmail.readonly",
-		},
+		Scopes:       scopes,
 		ExtraAuthorize: map[string]string{
 			"access_type": "offline", "include_granted_scopes": "true", "prompt": "consent",
 		},

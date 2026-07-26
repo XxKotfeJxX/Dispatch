@@ -49,10 +49,11 @@ func (api *API) Handler() http.Handler {
 	})
 	router.Get("/readyz", api.ready)
 	router.Get("/metrics", api.metrics)
+	router.Post("/internal/v1/discord/events", api.discordBridgeEvent)
 	router.With(api.rateLimit).Post("/ingest/v1/{slug}", api.receiveIngress)
 	router.With(api.rateLimit).Get("/connect/v1/oauth/{connector}/callback", api.connectorOAuthCallback)
-	router.With(api.rateLimit).Get("/connect/v1/hooks/{id}", api.connectorWebhook)
-	router.With(api.rateLimit).Post("/connect/v1/hooks/{id}", api.connectorWebhook)
+	router.With(api.rateLimit).Get("/connect/v1/github/setup", api.completeGitHubInstall)
+	router.Post("/connect/v1/github/events", api.githubWebhook)
 	router.Group(func(protected chi.Router) {
 		protected.Use(api.authenticate, api.rateLimit)
 		protected.Route("/api/v1", func(routes chi.Router) {
@@ -86,6 +87,7 @@ func (api *API) Handler() http.Handler {
 			routes.Delete("/sources/{id}", api.deleteIngressSource)
 			routes.Get("/connectors", api.listConnectors)
 			routes.Post("/connectors/{connector}/authorize", api.beginConnectorOAuth)
+			routes.Post("/connectors/github/install", api.beginGitHubInstall)
 			routes.Post("/connectors/telegram/auth/start", api.beginTelegramAccountAuth)
 			routes.Post("/connectors/telegram/auth/{authID}/code", api.completeTelegramAccountCode)
 			routes.Post("/connectors/telegram/auth/{authID}/password", api.completeTelegramAccountPassword)
@@ -351,8 +353,13 @@ func (api *API) settings(writer http.ResponseWriter, _ *http.Request) {
 			"public_https": strings.HasPrefix(
 				strings.ToLower(api.Config.Connectors.PublicURL), "https://",
 			),
-			"github_app":  api.Config.Connectors.GitHubAppSlug != "",
-			"discord_app": api.Config.Connectors.DiscordClientID != "",
+			"github_app": api.Config.Connectors.GitHubAppSlug != "" &&
+				api.Config.Connectors.GitHubAppID > 0 &&
+				api.Config.Connectors.GitHubWebhookSecret != "" &&
+				api.Config.Connectors.GitHubPrivateKeyB64 != "",
+			"discord_app": api.Config.Connectors.DiscordClientID != "" &&
+				api.Config.Connectors.DiscordClientSecret != "" &&
+				api.Config.Connectors.DiscordBotToken != "",
 			"telegram_account": api.Config.Connectors.TelegramAPIID > 0 &&
 				api.Config.Connectors.TelegramAPIHash != "",
 			"google_oauth": api.Config.Connectors.GoogleClientID != "" &&

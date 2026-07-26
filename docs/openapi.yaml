@@ -19,26 +19,30 @@ paths:
         - {name: error, in: query, schema: {type: string}}
       responses:
         "303": {description: OAuth result redirect}
-  /connect/v1/hooks/{id}:
+  /connect/v1/github/setup:
     get:
       security: []
-      summary: Verify a WebSub callback
+      summary: Complete a state-protected GitHub App installation
       parameters:
-        - {$ref: "#/components/parameters/ID"}
-        - {name: hub.challenge, in: query, schema: {type: string}}
+        - {name: installation_id, in: query, required: true, schema: {type: integer, format: int64}}
+        - {name: setup_action, in: query, schema: {type: string}}
+        - {name: state, in: query, required: true, schema: {type: string}}
       responses:
-        "200": {description: Verification challenge}
+        "303": {description: GitHub installation result redirect}
+  /connect/v1/github/events:
     post:
       security: []
-      summary: Receive an authenticated managed-connector event
-      parameters: [{$ref: "#/components/parameters/ID"}]
+      summary: Receive an HMAC-authenticated GitHub App webhook delivery
+      parameters:
+        - {name: X-GitHub-Event, in: header, required: true, schema: {type: string}}
+        - {name: X-GitHub-Delivery, in: header, required: true, schema: {type: string}}
+        - {name: X-Hub-Signature-256, in: header, required: true, schema: {type: string}}
       requestBody:
         required: true
         content:
           application/json: {schema: {type: object, additionalProperties: true}}
-          application/atom+xml: {schema: {type: string}}
       responses:
-        "200": {description: Event accepted or deduplicated}
+        "202": {description: Delivery accepted and routed}
         "401": {$ref: "#/components/responses/Error"}
   /api/v1/connectors:
     get:
@@ -68,8 +72,32 @@ paths:
               properties:
                 name: {type: string}
                 recipient_id: {type: string}
+                config:
+                  type: object
+                  additionalProperties: {type: string}
       responses:
         "200": {description: Provider authorization URL}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/connectors/github/install:
+    post:
+      summary: Begin a state-protected GitHub App installation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, recipient_id, config]
+              properties:
+                name: {type: string}
+                recipient_id: {type: string}
+                config:
+                  type: object
+                  required: [mode]
+                  properties:
+                    mode: {type: string, enum: [important, code, work, ci, all]}
+      responses:
+        "200": {description: GitHub App installation URL}
         "409": {$ref: "#/components/responses/Error"}
   /api/v1/connectors/telegram/auth/start:
     post:
@@ -379,7 +407,7 @@ components:
         summary: {type: string}
         category: {type: string}
         auth: {type: string, enum: [none, user_session, oauth2, app_install, api_key]}
-        transport: {type: string, enum: [internal, webhook, gateway, polling, websub]}
+        transport: {type: string, enum: [internal, webhook, gateway, polling]}
         availability: {type: string, enum: [available, setup_required, limited, unavailable]}
         configured: {type: boolean}
         capabilities: {type: array, items: {type: string}}

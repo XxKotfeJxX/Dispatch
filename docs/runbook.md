@@ -40,13 +40,13 @@ For one source, use **Sources → Rotate secret**, update the producer immediate
 3. A `400` means the payload is not JSON or cannot satisfy transformation constraints.
 4. A `200` with `created: false` is an intentional duplicate; a `202` created a notification.
 5. Inspect source events, then follow the notification ID into its delivery audit trail.
-6. For Discord, inspect `docker compose --profile discord logs discord-bridge`; logs deliberately omit message content and credentials.
+6. For Discord, inspect `docker compose logs discord-bridge`; the managed bridge starts with the normal stack and its logs deliberately omit message content and credentials.
 
 ## Connector incident
 
 1. Open **Integrations** and inspect `connected`, `action required`, `error`, or `disabled`.
 2. Use **Test** to verify provider credentials and retry activation. Tests never return the stored credential.
-3. `action_required` commonly means `CONNECTOR_PUBLIC_URL` is not public HTTPS or the provider needs deployment-level setup.
+3. `action_required` commonly means a webhook provider cannot reach `CONNECTOR_PUBLIC_URL` or the provider needs deployment-level setup.
 4. Use **Send sample** to separate provider ingestion problems from Dispatch routing or delivery problems.
 5. Before changing `CONNECTOR_ENCRYPTION_KEY`, disconnect every managed connector. Losing the key makes stored OAuth credentials unrecoverable.
-6. Disconnect normally so Dispatch removes YouTube or other managed subscriptions before deleting local state.
+6. Disconnect normally so Dispatch revokes OAuth access and removes managed connector state.

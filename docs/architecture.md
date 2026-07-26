@@ -3,7 +3,7 @@
 ```text
 Browser / API producer / provider account
         |            |             |
-  connector UI    OAuth/App    webhook/Gateway/WebSub
+  connector UI    OAuth/App    webhook/Gateway/polling
         |            |             |
         +-------- connector core --+
                      |

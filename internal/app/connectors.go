@@ -42,6 +42,9 @@ func (api *API) createConnectorConnection(writer http.ResponseWriter, request *h
 		writeError(writer, http.StatusBadRequest, "validation_error", "name and recipient_id are required")
 		return
 	}
+	if input.Config == nil {
+		input.Config = map[string]string{}
+	}
 	manifest, ok := connectors.Find(api.Config.Connectors, input.ConnectorID)
 	if !ok {
 		writeError(writer, http.StatusNotFound, "not_found", "connector is not registered")
@@ -65,14 +68,6 @@ func (api *API) createConnectorConnection(writer http.ResponseWriter, request *h
 	credentials := connectors.Credentials{Values: input.Credentials}
 	if credentials.Values == nil {
 		credentials.Values = map[string]string{}
-	}
-	if manifest.ID == "youtube" {
-		secret, err := ingress.GenerateSecret()
-		if err != nil {
-			api.storeError(writer, err)
-			return
-		}
-		credentials.Values["hook_secret"] = secret
 	}
 	cipher, err := api.encryptConnectorCredentials(credentials)
 	if err != nil {
@@ -149,6 +144,26 @@ func (api *API) testConnectorConnection(writer http.ResponseWriter, request *htt
 		})
 		return
 	}
+	if item.ConnectorID == "github" {
+		result, githubErr := api.testGitHubConnection(ctx, item)
+		if githubErr != nil {
+			_ = api.Store.UpdateConnectorState(
+				request.Context(), item.ID, "error", "", githubErr.Error(), true,
+			)
+			writeError(writer, http.StatusBadGateway, "connector_test_failed", githubErr.Error())
+			return
+		}
+		if err := api.Store.UpdateConnectorState(
+			request.Context(), item.ID, "connected", result.AccountLabel, "", true,
+		); err != nil {
+			api.storeError(writer, err)
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"data": result, "status": "connected",
+		})
+		return
+	}
 	if provider, oauth := connectors.OAuthSpec(item.ConnectorID, api.Config.Connectors); oauth {
 		result, updatedCredentials, oauthErr := api.testConnectorOAuth(
 			ctx, provider, credentials,
@@ -174,16 +189,18 @@ func (api *API) testConnectorConnection(writer http.ResponseWriter, request *htt
 				return
 			}
 		}
+		status := "connected"
+		activationError := ""
 		if err := api.Store.UpdateConnectorState(
-			request.Context(), item.ID, "action_required",
-			result.AccountLabel, "", true,
+			request.Context(), item.ID, status,
+			result.AccountLabel, activationError, true,
 		); err != nil {
 			api.storeError(writer, err)
 			return
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{
-			"data": result, "status": "action_required",
-			"activation_error": "Gmail Pub/Sub topic and mailbox watch provisioning are required.",
+			"data": result, "status": status,
+			"activation_error": activationError,
 		})
 		return
 	}
@@ -267,6 +284,24 @@ func (api *API) setConnectorEnabled(writer http.ResponseWriter, request *http.Re
 		writer.WriteHeader(http.StatusNoContent)
 		return
 	}
+	if item.ConnectorID == "github" {
+		result, githubErr := api.testGitHubConnection(ctx, item)
+		if githubErr != nil {
+			_ = api.Store.UpdateConnectorState(
+				request.Context(), item.ID, "error", "", githubErr.Error(), true,
+			)
+			writeError(writer, http.StatusBadGateway, "connector_activation_failed", githubErr.Error())
+			return
+		}
+		if err := api.Store.UpdateConnectorState(
+			request.Context(), item.ID, "connected", result.AccountLabel, "", true,
+		); err != nil {
+			api.storeError(writer, err)
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if provider, oauth := connectors.OAuthSpec(item.ConnectorID, api.Config.Connectors); oauth {
 		result, updatedCredentials, oauthErr := api.testConnectorOAuth(ctx, provider, credentials)
 		if oauthErr != nil {
@@ -290,9 +325,11 @@ func (api *API) setConnectorEnabled(writer http.ResponseWriter, request *http.Re
 				return
 			}
 		}
+		status := "connected"
+		activationError := ""
 		if err := api.Store.UpdateConnectorState(
-			request.Context(), item.ID, "action_required", result.AccountLabel,
-			"Gmail Pub/Sub watch provisioning is not configured yet.", true,
+			request.Context(), item.ID, status, result.AccountLabel,
+			activationError, true,
 		); err != nil {
 			api.storeError(writer, err)
 			return
@@ -360,6 +397,57 @@ func (api *API) beginConnectorOAuth(writer http.ResponseWriter, request *http.Re
 		writeError(writer, http.StatusBadRequest, "validation_error", "name and recipient_id are required")
 		return
 	}
+	if input.Config == nil {
+		input.Config = map[string]string{}
+	}
+	if connectorID == "discord" {
+		mode := strings.TrimSpace(input.Config["mode"])
+		switch mode {
+		case connectors.DiscordModeDirectMessages, connectors.DiscordModeMentions,
+			connectors.DiscordModeAll:
+		default:
+			writeError(writer, http.StatusBadRequest, "validation_error",
+				"Discord mode must be direct_messages, mentions, or all")
+			return
+		}
+		input.Config = map[string]string{"mode": mode}
+	}
+	if connectorID == "google" {
+		mode := strings.TrimSpace(input.Config["mode"])
+		switch mode {
+		case connectors.GmailModeInbox, connectors.GmailModeUnread,
+			connectors.GmailModeImportant:
+		default:
+			writeError(writer, http.StatusBadRequest, "validation_error",
+				"Gmail mode must be inbox, unread, or important")
+			return
+		}
+		modules := strings.TrimSpace(input.Config["modules"])
+		if !connectors.ValidGoogleModules(modules) {
+			writeError(writer, http.StatusBadRequest, "validation_error",
+				"Select at least one supported Google module")
+			return
+		}
+		reminderMinutes := strings.TrimSpace(input.Config["calendar_reminder_minutes"])
+		switch reminderMinutes {
+		case "", "5", "15", "30", "60":
+		default:
+			writeError(writer, http.StatusBadRequest, "validation_error",
+				"Calendar reminder must be 5, 15, 30, or 60 minutes")
+			return
+		}
+		if reminderMinutes == "" {
+			reminderMinutes = "15"
+		}
+		input.Config = map[string]string{
+			"mode":                      mode,
+			"modules":                   connectors.GoogleModulesValue(connectors.GoogleModules(modules)),
+			"calendar_reminder_minutes": reminderMinutes,
+		}
+		provider.Scopes = connectors.GoogleScopes(
+			connectors.GoogleModules(input.Config["modules"]),
+		)
+	}
 	state, err := connectors.RandomURLToken(32)
 	if err != nil {
 		api.storeError(writer, err)
@@ -378,7 +466,8 @@ func (api *API) beginConnectorOAuth(writer http.ResponseWriter, request *http.Re
 	if err := api.Store.CreateOAuthState(request.Context(), connectors.OAuthState{
 		StateHash: connectors.StateHash(state), ConnectorID: connectorID,
 		ConnectionName: input.Name, RecipientID: input.RecipientID,
-		VerifierCipher: verifierCipher, ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
+		Config: input.Config, VerifierCipher: verifierCipher,
+		ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
 	}); err != nil {
 		api.storeError(writer, err)
 		return
@@ -433,64 +522,34 @@ func (api *API) connectorOAuthCallback(writer http.ResponseWriter, request *http
 		api.redirectConnectorResult(writer, request, connectorID, "credential_encryption_failed")
 		return
 	}
+	connectionConfig := pending.Config
+	if connectionConfig == nil {
+		connectionConfig = map[string]string{}
+	}
+	if connectorID == "discord" {
+		connectionConfig["discord_user_id"] = credentials.Values["provider_user_id"]
+		connectionConfig["guild_id"] = credentials.Values["guild_id"]
+		connectionConfig["guild_name"] = credentials.Values["guild_name"]
+		if connectionConfig["discord_user_id"] == "" || connectionConfig["guild_id"] == "" {
+			api.redirectConnectorResult(writer, request, connectorID, "discord_installation_incomplete")
+			return
+		}
+	}
+	if (connectorID == "google" || connectorID == "youtube") &&
+		credentials.RefreshToken == "" {
+		api.redirectConnectorResult(writer, request, connectorID, connectorID+"_refresh_token_missing")
+		return
+	}
+	status := "connected"
 	_, err = api.Store.CreateConnectorConnection(request.Context(), connectors.CreateInput{
 		ConnectorID: connectorID, Name: pending.ConnectionName,
-		RecipientID: pending.RecipientID, Config: map[string]string{},
-	}, "action_required", accountLabel, cipher, credentials.ExpiresAt)
+		RecipientID: pending.RecipientID, Config: connectionConfig,
+	}, status, accountLabel, cipher, credentials.ExpiresAt)
 	if err != nil {
 		api.redirectConnectorResult(writer, request, connectorID, "connection_create_failed")
 		return
 	}
 	api.redirectConnectorResult(writer, request, connectorID, "")
-}
-
-func (api *API) connectorWebhook(writer http.ResponseWriter, request *http.Request) {
-	item, credentials, err := api.connectorConnection(request.Context(), chi.URLParam(request, "id"))
-	if err != nil || !item.Enabled {
-		writeError(writer, http.StatusNotFound, "not_found", "connector callback is unavailable")
-		return
-	}
-	if request.Method == http.MethodGet && item.ConnectorID == "youtube" {
-		if !secureConnectorValue(
-			request.URL.Query().Get("token"), credentials.Values["hook_secret"],
-		) {
-			writeError(writer, http.StatusUnauthorized, "invalid_callback_token", "callback token is invalid")
-			return
-		}
-		challenge := request.URL.Query().Get("hub.challenge")
-		if challenge == "" {
-			writeError(writer, http.StatusBadRequest, "invalid_challenge", "hub.challenge is required")
-			return
-		}
-		writer.Header().Set("Content-Type", "text/plain")
-		writer.WriteHeader(http.StatusOK)
-		_, _ = writer.Write([]byte(challenge))
-		return
-	}
-	raw, err := io.ReadAll(request.Body)
-	if err != nil || len(raw) == 0 {
-		writeError(writer, http.StatusBadRequest, "invalid_body", "callback body is empty")
-		return
-	}
-	if item.ConnectorID == "youtube" && !secureConnectorValue(
-		request.URL.Query().Get("token"), credentials.Values["hook_secret"],
-	) {
-		writeError(writer, http.StatusUnauthorized, "invalid_callback_token", "callback token is invalid")
-		return
-	}
-	event, err := connectors.VerifyAndNormalize(item, credentials, request.Header, raw)
-	if err != nil {
-		writeError(writer, http.StatusUnauthorized, "invalid_connector_event", err.Error())
-		return
-	}
-	notificationID, created, err := api.enqueueConnectorEvent(request.Context(), item, event)
-	if err != nil {
-		api.storeError(writer, err)
-		return
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"data": map[string]any{"notification_id": notificationID, "created": created},
-	})
 }
 
 func (api *API) enqueueConnectorEvent(
@@ -587,6 +646,10 @@ func (api *API) exchangeConnectorOAuth(
 		TokenType    string `json:"token_type"`
 		Scope        string `json:"scope"`
 		ExpiresIn    int64  `json:"expires_in"`
+		Guild        *struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"guild"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&token); err != nil {
 		return connectors.Credentials{}, "", err
@@ -599,6 +662,11 @@ func (api *API) exchangeConnectorOAuth(
 		value := time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
 		expiresAt = &value
 	}
+	valuesMap := map[string]string{}
+	if token.Guild != nil {
+		valuesMap["guild_id"] = token.Guild.ID
+		valuesMap["guild_name"] = token.Guild.Name
+	}
 	accountLabel := provider.ID + " account"
 	if provider.UserInfoURL != "" {
 		userRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, provider.UserInfoURL, nil)
@@ -607,12 +675,25 @@ func (api *API) exchangeConnectorOAuth(
 			if userResponse, userErr := client.Do(userRequest); userErr == nil {
 				defer userResponse.Body.Close()
 				var profile struct {
-					Email string `json:"email"`
-					Name  string `json:"name"`
+					ID         string `json:"id"`
+					Sub        string `json:"sub"`
+					Email      string `json:"email"`
+					Name       string `json:"name"`
+					Username   string `json:"username"`
+					GlobalName string `json:"global_name"`
 				}
 				if userResponse.StatusCode >= 200 && userResponse.StatusCode < 300 &&
 					json.NewDecoder(io.LimitReader(userResponse.Body, 1<<20)).Decode(&profile) == nil {
-					if profile.Email != "" {
+					valuesMap["provider_user_id"] = profile.ID
+					if valuesMap["provider_user_id"] == "" {
+						valuesMap["provider_user_id"] = profile.Sub
+					}
+					valuesMap["provider_username"] = profile.Username
+					if profile.GlobalName != "" {
+						accountLabel = profile.GlobalName
+					} else if profile.Username != "" {
+						accountLabel = profile.Username
+					} else if profile.Email != "" {
 						accountLabel = profile.Email
 					} else if profile.Name != "" {
 						accountLabel = profile.Name
@@ -622,7 +703,7 @@ func (api *API) exchangeConnectorOAuth(
 		}
 	}
 	return connectors.Credentials{
-		Values: map[string]string{}, AccessToken: token.AccessToken,
+		Values: valuesMap, AccessToken: token.AccessToken,
 		RefreshToken: token.RefreshToken, TokenType: token.TokenType,
 		Scope: token.Scope, ExpiresAt: expiresAt,
 	}, accountLabel, nil
@@ -697,13 +778,21 @@ func (api *API) testConnectorOAuth(
 		return connectors.TestResult{}, credentials, fmt.Errorf("provider identity check returned %s", response.Status)
 	}
 	var profile struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		Email      string `json:"email"`
+		Name       string `json:"name"`
+		Username   string `json:"username"`
+		GlobalName string `json:"global_name"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&profile); err != nil {
 		return connectors.TestResult{}, credentials, err
 	}
-	label := profile.Email
+	label := profile.GlobalName
+	if label == "" {
+		label = profile.Username
+	}
+	if label == "" {
+		label = profile.Email
+	}
 	if label == "" {
 		label = profile.Name
 	}
@@ -728,6 +817,10 @@ func (api *API) revokeConnectorOAuth(
 		return fmt.Errorf("OAuth token is missing")
 	}
 	values := url.Values{"token": {token}}
+	if provider.ID == "discord" {
+		values.Set("client_id", provider.ClientID)
+		values.Set("client_secret", provider.ClientSecret)
+	}
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, provider.RevokeURL, strings.NewReader(values.Encode()),
 	)
@@ -764,9 +857,4 @@ func (api *API) redirectConnectorResult(
 	}
 	target.RawQuery = query.Encode()
 	http.Redirect(writer, request, target.String(), http.StatusSeeOther)
-}
-
-func secureConnectorValue(provided, expected string) bool {
-	return expected != "" && provided != "" &&
-		ingress.VerifyStoredHash(ingress.HashSecret(expected), provided)
 }

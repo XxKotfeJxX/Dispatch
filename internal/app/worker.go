@@ -45,6 +45,19 @@ func (worker *Worker) Run(ctx context.Context) error {
 			worker.telegramAccountLoop(ctx)
 		}()
 	}
+	if worker.Config.Connectors.GoogleClientID != "" &&
+		worker.Config.Connectors.GoogleClientSecret != "" {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			worker.googleLoop(ctx)
+		}()
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			worker.youtubeLoop(ctx)
+		}()
+	}
 	for index := 0; index < worker.Config.WorkerConcurrency; index++ {
 		group.Add(1)
 		go func(slot int) {

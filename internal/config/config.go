@@ -65,14 +65,28 @@ type IngressConfig struct {
 }
 
 type ConnectorConfig struct {
-	PublicURL          string
-	EncryptionKey      string
-	TelegramAPIID      int
-	TelegramAPIHash    string
-	GitHubAppSlug      string
-	DiscordClientID    string
-	GoogleClientID     string
-	GoogleClientSecret string
+	PublicURL           string
+	EncryptionKey       string
+	TelegramAPIID       int
+	TelegramAPIHash     string
+	GitHubAppSlug       string
+	GitHubAppID         int64
+	GitHubWebhookSecret string
+	GitHubPrivateKeyB64 string
+	DiscordClientID     string
+	DiscordClientSecret string
+	DiscordBotToken     string
+	GoogleClientID      string
+	GoogleClientSecret  string
+	GmailAPIBase        string
+	CalendarAPIBase     string
+	DriveActivityBase   string
+	TasksAPIBase        string
+	ChatAPIBase         string
+	GooglePollInterval  time.Duration
+	YouTubeAPIBase      string
+	YouTubeFeedBase     string
+	YouTubePollInterval time.Duration
 }
 
 func Load() (Config, error) {
@@ -114,14 +128,28 @@ func Load() (Config, error) {
 		},
 		Ingress: IngressConfig{EncryptionKey: strings.TrimSpace(os.Getenv("INGRESS_ENCRYPTION_KEY"))},
 		Connectors: ConnectorConfig{
-			PublicURL:          strings.TrimRight(env("CONNECTOR_PUBLIC_URL", env("WEB_ORIGIN", "http://localhost:5173")), "/"),
-			EncryptionKey:      strings.TrimSpace(os.Getenv("CONNECTOR_ENCRYPTION_KEY")),
-			TelegramAPIID:      envInt("TELEGRAM_API_ID", 0),
-			TelegramAPIHash:    strings.TrimSpace(os.Getenv("TELEGRAM_API_HASH")),
-			GitHubAppSlug:      strings.TrimSpace(os.Getenv("GITHUB_APP_SLUG")),
-			DiscordClientID:    strings.TrimSpace(os.Getenv("DISCORD_CLIENT_ID")),
-			GoogleClientID:     strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID")),
-			GoogleClientSecret: strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")),
+			PublicURL:           strings.TrimRight(env("CONNECTOR_PUBLIC_URL", env("WEB_ORIGIN", "http://localhost:5173")), "/"),
+			EncryptionKey:       strings.TrimSpace(os.Getenv("CONNECTOR_ENCRYPTION_KEY")),
+			TelegramAPIID:       envInt("TELEGRAM_API_ID", 0),
+			TelegramAPIHash:     strings.TrimSpace(os.Getenv("TELEGRAM_API_HASH")),
+			GitHubAppSlug:       strings.TrimSpace(os.Getenv("GITHUB_APP_SLUG")),
+			GitHubAppID:         envInt64("GITHUB_APP_ID", 0),
+			GitHubWebhookSecret: strings.TrimSpace(os.Getenv("GITHUB_WEBHOOK_SECRET")),
+			GitHubPrivateKeyB64: strings.TrimSpace(os.Getenv("GITHUB_PRIVATE_KEY_BASE64")),
+			DiscordClientID:     strings.TrimSpace(os.Getenv("DISCORD_CLIENT_ID")),
+			DiscordClientSecret: strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
+			DiscordBotToken:     strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN")),
+			GoogleClientID:      strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID")),
+			GoogleClientSecret:  strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")),
+			GmailAPIBase:        env("GOOGLE_GMAIL_API_BASE", "https://gmail.googleapis.com"),
+			CalendarAPIBase:     env("GOOGLE_CALENDAR_API_BASE", "https://www.googleapis.com/calendar/v3"),
+			DriveActivityBase:   env("GOOGLE_DRIVE_ACTIVITY_API_BASE", "https://driveactivity.googleapis.com/v2"),
+			TasksAPIBase:        env("GOOGLE_TASKS_API_BASE", "https://tasks.googleapis.com/tasks/v1"),
+			ChatAPIBase:         env("GOOGLE_CHAT_API_BASE", "https://chat.googleapis.com/v1"),
+			GooglePollInterval:  envDuration("GOOGLE_POLL_INTERVAL", envDuration("GMAIL_POLL_INTERVAL", 30*time.Second)),
+			YouTubeAPIBase:      env("YOUTUBE_API_BASE", "https://www.googleapis.com/youtube/v3"),
+			YouTubeFeedBase:     env("YOUTUBE_FEED_BASE", "https://www.youtube.com"),
+			YouTubePollInterval: envDuration("YOUTUBE_POLL_INTERVAL", 10*time.Minute),
 		},
 	}
 	if config.Ingress.EncryptionKey == "" {
@@ -141,6 +169,12 @@ func Load() (Config, error) {
 	}
 	if config.WorkerConcurrency < 1 || config.WorkerConcurrency > 64 {
 		return Config{}, fmt.Errorf("WORKER_CONCURRENCY must be between 1 and 64")
+	}
+	if config.Connectors.GooglePollInterval < 5*time.Second {
+		return Config{}, fmt.Errorf("GOOGLE_POLL_INTERVAL must be at least 5s")
+	}
+	if config.Connectors.YouTubePollInterval < time.Minute {
+		return Config{}, fmt.Errorf("YOUTUBE_POLL_INTERVAL must be at least 1m")
 	}
 	return config, nil
 }

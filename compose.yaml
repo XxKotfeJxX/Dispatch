@@ -77,7 +77,6 @@ services:
     restart: unless-stopped
 
   discord-bridge:
-    profiles: ["discord"]
     build:
       context: .
       target: runtime
@@ -88,7 +87,26 @@ services:
       - path: .env
         required: false
     environment:
-      DISCORD_INGRESS_URL: ${DISCORD_INGRESS_URL:-http://api:8080/ingest/v1/discord}
+      DISCORD_INTERNAL_URL: http://api:8080/internal/v1/discord/events
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  github-smee:
+    profiles: ["github-dev"]
+    image: node:22-alpine
+    command:
+      - sh
+      - -c
+      - >-
+        test -n "$$GITHUB_SMEE_URL" &&
+        npx --yes --package=smee-client smee
+        -u "$$GITHUB_SMEE_URL"
+        -t http://api:8080/connect/v1/github/events
+    env_file:
+      - path: .env
+        required: false
     depends_on:
       api:
         condition: service_healthy

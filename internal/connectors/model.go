@@ -17,7 +17,6 @@ const (
 	TransportWebhook  Transport = "webhook"
 	TransportGateway  Transport = "gateway"
 	TransportPolling  Transport = "polling"
-	TransportWebSub   Transport = "websub"
 
 	Available     Availability = "available"
 	SetupRequired Availability = "setup_required"
@@ -77,8 +76,9 @@ type CreateInput struct {
 }
 
 type OAuthStartInput struct {
-	Name        string `json:"name"`
-	RecipientID string `json:"recipient_id"`
+	Name        string            `json:"name"`
+	RecipientID string            `json:"recipient_id"`
+	Config      map[string]string `json:"config"`
 }
 
 type OAuthState struct {
@@ -86,6 +86,7 @@ type OAuthState struct {
 	ConnectorID    string
 	ConnectionName string
 	RecipientID    string
+	Config         map[string]string
 	VerifierCipher []byte
 	ExpiresAt      time.Time
 }

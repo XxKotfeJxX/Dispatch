@@ -9,7 +9,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Managed connector core with declarative manifests, encrypted credentials, lifecycle state, OAuth state/PKCE, provider tests, activation, pause, disconnect, and sample delivery.
 - User-facing Integrations catalog for Telegram, Discord, GitHub, Google/Gmail, and YouTube, with separate Demo and Universal Webhook tools.
 - Telegram personal-account authorization through phone code and optional 2FA, encrypted MTProto session persistence, session health checks, and worker-managed real-time message ingestion.
-- YouTube WebSub subscription and event normalization, and Google OAuth callback foundation.
+- YouTube OAuth subscription discovery, local feed polling, event normalization, and Google OAuth callback support.
 - Connector persistence, event deduplication, migration, documentation, threat controls, and end-to-end UI coverage.
 
 ### Changed
