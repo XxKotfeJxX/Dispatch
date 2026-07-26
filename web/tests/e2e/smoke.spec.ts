@@ -12,8 +12,8 @@ test('integrations catalog uses branded one-click cards and separates developer 
   {id:'telegram',name:'Telegram',summary:'Connect your personal Telegram account.',category:'Messaging',auth:'user_session',transport:'gateway',availability:'setup_required',configured:true,capabilities:['private chats','groups'],fields:[{name:'phone_number',label:'Phone number',type:'tel',required:true,secret:false,placeholder:'+380…'}],setup_hint:'Ready.'},
   {id:'discord',name:'Discord',summary:'Receive allowlisted bot messages.',category:'Messaging',auth:'app_install',transport:'gateway',availability:'setup_required',configured:false,capabilities:['Gateway'],fields:null,setup_hint:'Set DISCORD_CLIENT_ID first.'},
   {id:'github',name:'GitHub',summary:'Receive repository events.',category:'Development',auth:'app_install',transport:'webhook',availability:'setup_required',configured:false,capabilities:['issues'],fields:null,setup_hint:'Set GITHUB_APP_SLUG first.'},
-  {id:'google',name:'Google / Gmail',summary:'Receive Gmail changes.',category:'Productivity',auth:'oauth2',transport:'webhook',availability:'setup_required',configured:false,capabilities:['OAuth 2.0'],fields:null,setup_hint:'Set Google OAuth credentials first.'},
-  {id:'youtube',name:'YouTube',summary:'Receive channel updates.',category:'Media',auth:'none',transport:'websub',availability:'available',configured:true,capabilities:['uploads'],fields:[{name:'channel_id',label:'Channel ID',type:'text',required:true,secret:false}],setup_hint:'Ready.'},
+  {id:'google',name:'Google',summary:'Connect Google services.',category:'Productivity',auth:'oauth2',transport:'polling',availability:'setup_required',configured:false,capabilities:['OAuth 2.0'],fields:null,setup_hint:'Set Google OAuth credentials first.'},
+  {id:'youtube',name:'YouTube',summary:'Receive subscription uploads.',category:'Media',auth:'oauth2',transport:'polling',availability:'available',configured:true,capabilities:['subscriptions','uploads'],fields:[],setup_hint:'Ready.'},
   {id:'webhook',name:'Universal webhook',summary:'Any JSON producer.',category:'Advanced',auth:'api_key',transport:'webhook',availability:'available',configured:true,capabilities:['HMAC'],fields:[],setup_hint:'Advanced fallback.'},
  ],connections:[]}}))
  await page.route('**/api/v1/sources', route=>route.fulfill({json:{data:[{
@@ -35,7 +35,7 @@ test('integrations catalog uses branded one-click cards and separates developer 
  await expect(page.getByRole('heading',{name:'Integrations'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect Discord'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect GitHub'})).toBeVisible()
- await expect(page.getByRole('button',{name:'Connect Google / Gmail'})).toBeVisible()
+ await expect(page.getByRole('button',{name:'Connect Google'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect YouTube'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect Telegram'})).toBeVisible()
  await expect(page.getByRole('button',{name:/Viber|ChatGPT/})).toHaveCount(0)

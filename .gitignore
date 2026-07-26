@@ -3,6 +3,7 @@
 bin/
 coverage/
 web/node_modules/
+web/.pnpm-store/
 web/dist/
 web/playwright-report/
 web/test-results/
