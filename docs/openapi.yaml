@@ -194,12 +194,35 @@ paths:
         "204": {description: Lifecycle state updated}
         "502": {$ref: "#/components/responses/Error"}
   /api/v1/connections/{id}:
+    put:
+      summary: Update a connection name, recipient, and user-editable preferences
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/UpdateConnectorConnection"}
+      responses:
+        "200": {description: Connection updated}
+        "409": {$ref: "#/components/responses/Error"}
     delete:
       summary: Deactivate and delete a connector connection
       parameters: [{$ref: "#/components/parameters/ID"}]
       responses:
         "204": {description: Disconnected}
         "502": {$ref: "#/components/responses/Error"}
+  /api/v1/connections/{id}/authorize:
+    post:
+      summary: Reauthorize an OAuth connection and update it in place
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/UpdateConnectorConnection"}
+      responses:
+        "200": {description: Authorization URL}
+        "409": {$ref: "#/components/responses/Error"}
   /ingest/v1/{slug}:
     post:
       security: []
@@ -439,6 +462,13 @@ components:
           type: object
           writeOnly: true
           additionalProperties: {type: string}
+    UpdateConnectorConnection:
+      type: object
+      required: [name, recipient_id, config]
+      properties:
+        name: {type: string}
+        recipient_id: {type: string}
+        config: {type: object, additionalProperties: {type: string}}
     ConnectorConnection:
       type: object
       required: [id, connector_id, name, recipient_id, status, config, enabled, created_at, updated_at]

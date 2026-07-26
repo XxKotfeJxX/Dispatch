@@ -8,6 +8,7 @@ test('console shell renders', async ({page})=>{
 })
 
 test('integrations catalog uses branded one-click cards and separates developer tools', async ({page})=>{
+ let updatedConnection: Record<string, unknown> | undefined
  await page.route('**/api/v1/connectors', route=>route.fulfill({json:{data:[
   {id:'demo',name:'Demo source',summary:'Generate a safe sample event.',category:'Testing',auth:'none',transport:'internal',availability:'available',configured:true,capabilities:['sample events'],fields:null,setup_hint:'Ready.'},
   {id:'telegram',name:'Telegram',summary:'Connect your personal Telegram account.',category:'Messaging',auth:'user_session',transport:'gateway',availability:'setup_required',configured:true,capabilities:['private chats','groups'],fields:[{name:'phone_number',label:'Phone number',type:'tel',required:true,secret:false,placeholder:'+380…'}],setup_hint:'Ready.'},
@@ -16,7 +17,20 @@ test('integrations catalog uses branded one-click cards and separates developer 
   {id:'google',name:'Google',summary:'Connect Google services.',category:'Productivity',auth:'oauth2',transport:'polling',availability:'setup_required',configured:false,capabilities:['OAuth 2.0'],fields:null,setup_hint:'Set Google OAuth credentials first.'},
   {id:'youtube',name:'YouTube',summary:'Receive subscription uploads.',category:'Media',auth:'oauth2',transport:'polling',availability:'available',configured:true,capabilities:['subscriptions','uploads'],fields:[],setup_hint:'Ready.'},
   {id:'webhook',name:'Universal webhook',summary:'Any JSON producer.',category:'Advanced',auth:'api_key',transport:'webhook',availability:'available',configured:true,capabilities:['HMAC'],fields:[],setup_hint:'Advanced fallback.'},
- ],connections:[]}}))
+ ],connections:[{
+  id:'con_google',connector_id:'google',name:'Google account',recipient_id:'rec_demo',
+  status:'connected',account_label:'alex@example.com',
+  config:{modules:'gmail,calendar,drive,tasks',mode:'inbox',calendar_reminder_minutes:'15'},
+  enabled:true,
+ }]}}))
+ await page.route('**/api/v1/connections/con_google', async route=>{
+  if(route.request().method()==='PUT'){
+   updatedConnection=route.request().postDataJSON()
+   await route.fulfill({json:{data:{id:'con_google',connector_id:'google',status:'connected',enabled:true,...updatedConnection}}})
+   return
+  }
+  await route.fallback()
+ })
  await page.route('**/api/v1/sources', route=>route.fulfill({json:{data:[{
   id:'src_demo',name:'GitHub production',slug:'github-production',provider:'github',
   recipient_id:'rec_demo',auth_mode:'hmac_sha256',signature_header:'X-Hub-Signature-256',
@@ -39,6 +53,13 @@ test('integrations catalog uses branded one-click cards and separates developer 
  await expect(page.getByRole('button',{name:'Connect Google'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect YouTube'})).toBeVisible()
  await expect(page.getByRole('button',{name:'Connect Telegram'})).toBeVisible()
+ await page.getByRole('button',{name:'Settings'}).click()
+ await page.getByLabel('Connection name').fill('Work Google')
+ await page.getByRole('button',{name:'Save settings'}).click()
+ expect(updatedConnection).toMatchObject({
+  name:'Work Google',recipient_id:'rec_demo',
+  config:{modules:'gmail,calendar,drive,tasks',mode:'inbox',calendar_reminder_minutes:'15'},
+ })
  await expect(page.getByRole('button',{name:/Viber|ChatGPT/})).toHaveCount(0)
  await page.getByRole('button',{name:'Connect Telegram'}).click()
  await page.getByLabel('Phone number').fill('+380501234567')

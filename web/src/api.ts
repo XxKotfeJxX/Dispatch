@@ -28,7 +28,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 export type Notification = {
   id: string; idempotency_key: string; recipient_id: string; event_type: string
   subject: string; body: string; summary?: string; category?: string; priority: string; status: string
-  requested_channels: string[]; created_at: string; scheduled_at?: string
+  metadata?: Record<string,unknown>; requested_channels: string[]; created_at: string; scheduled_at?: string
 }
 export type Recipient = {
   id: string; name: string; email?: string; telegram_chat_id?: string; webhook_url?: string

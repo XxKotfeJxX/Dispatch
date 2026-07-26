@@ -60,6 +60,19 @@ https://dispatch.example/connect/v1/oauth/youtube/callback
 
 `CONNECTOR_ENCRYPTION_KEY` must remain stable for the life of stored connections. If omitted, Dispatch falls back to `INGRESS_ENCRYPTION_KEY`, then the API key for local compatibility. Production should always use an independent value and back it up with the database.
 
+Connected accounts expose **Settings** in the console. Users can rename a connection, change its recipient, and edit provider filters without creating another connection. Enabling or removing Google modules opens the Google consent screen again because the required read-only scopes may change; the OAuth callback updates the same stored connection.
+
+Normalized events include common `connection_id`, `connection_name`, and `account_label` metadata. Provider metadata uses stable template aliases such as `sender`, `url`, and the service-specific variables shown by the template editor. Telegram additionally includes sender ID/username/name, chat ID/title/username/type, timestamp, mention/forward/media flags, and message counters when Telegram supplies them.
+
+Compose uses configurable external DNS forwarders for provider APIs:
+
+```dotenv
+DISPATCH_DNS_PRIMARY=1.1.1.1
+DISPATCH_DNS_SECONDARY=8.8.8.8
+```
+
+Override these with DNS servers reachable from the deployment network when public DNS is blocked.
+
 For Google, create one Google Cloud project and one OAuth 2.0 client for the
 entire Dispatch deployment. In **APIs & Services → Library**, enable:
 

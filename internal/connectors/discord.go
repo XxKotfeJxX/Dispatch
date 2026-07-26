@@ -87,6 +87,7 @@ func NormalizeDiscordEvent(event DiscordEvent) NormalizedEvent {
 		Body:       body,
 		Metadata: map[string]any{
 			"connector":        "discord",
+			"sender":           event.Author.Username,
 			"author_id":        event.Author.ID,
 			"author_username":  event.Author.Username,
 			"channel_id":       event.ChannelID,

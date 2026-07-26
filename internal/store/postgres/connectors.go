@@ -146,6 +146,25 @@ func (store *Store) UpdateConnectorConfig(
 	return requireChanged(command)
 }
 
+func (store *Store) UpdateConnectorConnection(
+	ctx context.Context,
+	id, name, recipientID string,
+	config map[string]string,
+) error {
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	command, err := store.pool.Exec(ctx, `
+		UPDATE connector_connections
+		SET name=$2,recipient_id=$3,config_json=$4,updated_at=now()
+		WHERE id=$1`, id, name, recipientID, configJSON)
+	if err != nil {
+		return err
+	}
+	return requireChanged(command)
+}
+
 func (store *Store) TouchConnectorEvent(ctx context.Context, id string) error {
 	command, err := store.pool.Exec(ctx, `
 		UPDATE connector_connections SET last_event_at=now(),last_error=NULL,updated_at=now()
@@ -171,10 +190,10 @@ func (store *Store) CreateOAuthState(ctx context.Context, state connectors.OAuth
 	}
 	_, err = store.pool.Exec(ctx, `
 		INSERT INTO connector_oauth_states
-		    (state_hash,connector_id,connection_name,recipient_id,config_json,
+		    (state_hash,connection_id,connector_id,connection_name,recipient_id,config_json,
 		     verifier_cipher,expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		state.StateHash, state.ConnectorID, state.ConnectionName,
+		VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,$8)`,
+		state.StateHash, state.ConnectionID, state.ConnectorID, state.ConnectionName,
 		state.RecipientID, configJSON, state.VerifierCipher, state.ExpiresAt)
 	return err
 }
@@ -189,9 +208,9 @@ func (store *Store) ConsumeOAuthState(
 		err := tx.QueryRow(ctx, `
 			DELETE FROM connector_oauth_states
 			WHERE state_hash=$1 AND expires_at>now()
-			RETURNING state_hash,connector_id,connection_name,recipient_id,
+			RETURNING state_hash,COALESCE(connection_id,''),connector_id,connection_name,recipient_id,
 			          config_json,verifier_cipher,expires_at`, hash).Scan(
-			&result.StateHash, &result.ConnectorID, &result.ConnectionName,
+			&result.StateHash, &result.ConnectionID, &result.ConnectorID, &result.ConnectionName,
 			&result.RecipientID, &configJSON, &result.VerifierCipher, &result.ExpiresAt)
 		return notFound(err)
 	})

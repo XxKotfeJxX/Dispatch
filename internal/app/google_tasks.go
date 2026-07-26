@@ -161,20 +161,27 @@ func normalizeGoogleTask(list googleTaskList, task googleTask) connectors.Normal
 	if notes := truncateGoogleText(task.Notes, 8000); notes != "" {
 		body = append(body, "", notes)
 	}
+	link := ""
+	if len(task.Links) > 0 {
+		link = task.Links[0].Link
+	}
 	return connectors.NormalizedEvent{
 		ExternalID: "tasks:" + list.ID + ":" + task.ID + ":" + task.Updated,
 		EventType:  eventType,
 		Subject:    statusLabel + ": " + title,
 		Body:       strings.Join(body, "\n"),
 		Metadata: map[string]any{
-			"connector": "google",
-			"provider":  "tasks",
-			"list_id":   list.ID,
-			"list_name": list.Title,
-			"task_id":   task.ID,
-			"status":    task.Status,
-			"due":       task.Due,
-			"updated":   task.Updated,
+			"connector":  "google",
+			"provider":   "tasks",
+			"list_id":    list.ID,
+			"list_name":  list.Title,
+			"task_id":    task.ID,
+			"task_title": title,
+			"status":     task.Status,
+			"due":        task.Due,
+			"completed":  task.Completed,
+			"updated":    task.Updated,
+			"url":        link,
 		},
 	}
 }

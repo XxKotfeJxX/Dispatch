@@ -320,7 +320,7 @@ func (worker *Worker) enqueueGoogleEvent(
 		EventType:      event.EventType,
 		Subject:        event.Subject,
 		Body:           event.Body,
-		Metadata:       event.Metadata,
+		Metadata:       connectors.ConnectionMetadata(connection, event.Metadata),
 	}
 	if _, err := worker.Store.CreateNotification(ctx, &item); err != nil {
 		return err

@@ -9,10 +9,14 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Delivery destinations now come exclusively from the recipient selected by an integration; event payloads and AI can no longer override them.
 - Gemini is limited to category, priority, summary, confidence, and reason codes.
 - Universal ingress no longer asks users to enter delivery-channel names.
+- Connected integrations can be renamed, retargeted, and reconfigured in place; Google scope changes update the existing connection after reauthorization.
+- Connector metadata and template variables now use consistent sender, link, account, and provider-specific aliases.
 
 ### Fixed
 
 - Recovered notification jobs can safely resume after the notification has already reached the queued state.
+- Telegram notifications now include sender username/name, chat context, timestamps, and available message flags instead of only an opaque peer and message ID.
+- Compose can bypass intermittent Docker Desktop DNS forwarding failures for Google and other external provider APIs.
 
 ### Removed
 

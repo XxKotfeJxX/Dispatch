@@ -91,13 +91,16 @@ func NormalizeYouTubeEntry(
 			"Watch: " + videoURL,
 		}, "\n"),
 		Metadata: map[string]any{
-			"connector":    "youtube",
-			"video_id":     entry.VideoID,
-			"channel_id":   entry.ChannelID,
-			"channel_name": channelName,
-			"video_url":    videoURL,
-			"published_at": entry.Published,
-			"updated_at":   entry.Updated,
+			"connector":     "youtube",
+			"sender":        channelName,
+			"video_id":      entry.VideoID,
+			"channel_id":    entry.ChannelID,
+			"channel_name":  channelName,
+			"channel_title": channelName,
+			"video_url":     videoURL,
+			"url":           videoURL,
+			"published_at":  entry.Published,
+			"updated_at":    entry.Updated,
 		},
 	}, nil
 }

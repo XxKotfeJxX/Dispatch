@@ -44,6 +44,9 @@ func TestNormalizeGmailMessage(t *testing.T) {
 		!strings.Contains(event.Body, "mail.google.com") {
 		t.Fatalf("unexpected normalized event: %#v", event)
 	}
+	if event.Metadata["sender"] != "Alice <alice@example.com>" {
+		t.Fatalf("sender metadata missing: %#v", event.Metadata)
+	}
 }
 
 func TestGmailMessageTextPrefersPlainTextAndDoesNotFetchAttachments(t *testing.T) {
@@ -71,5 +74,9 @@ func TestGmailMessageTextPrefersPlainTextAndDoesNotFetchAttachments(t *testing.T
 	if !strings.Contains(event.Body, "quarterly-report.pdf") ||
 		!strings.Contains(event.Body, "application/pdf") {
 		t.Fatalf("attachment context missing from AI body: %q", event.Body)
+	}
+	names, ok := event.Metadata["attachment_names"].([]string)
+	if !ok || len(names) != 1 || names[0] != "quarterly-report.pdf" {
+		t.Fatalf("template attachment names missing: %#v", event.Metadata)
 	}
 }

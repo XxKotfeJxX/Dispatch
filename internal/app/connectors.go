@@ -253,6 +253,164 @@ func (api *API) connectorSample(writer http.ResponseWriter, request *http.Reques
 	})
 }
 
+func (api *API) updateConnectorConnection(writer http.ResponseWriter, request *http.Request) {
+	var input connectors.UpdateInput
+	if !decode(writer, request, &input) {
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	input.RecipientID = strings.TrimSpace(input.RecipientID)
+	if input.Name == "" || input.RecipientID == "" {
+		writeError(writer, http.StatusBadRequest, "validation_error", "name and recipient_id are required")
+		return
+	}
+	item, _, err := api.connectorConnection(request.Context(), chi.URLParam(request, "id"))
+	if err != nil {
+		api.storeError(writer, err)
+		return
+	}
+	if _, err := api.Store.GetRecipient(request.Context(), input.RecipientID); err != nil {
+		api.storeError(writer, err)
+		return
+	}
+	config, err := editableConnectorConfig(item.ConnectorID, item.Config, input.Config)
+	if err != nil {
+		writeError(writer, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if item.ConnectorID == "google" && config["modules"] != item.Config["modules"] {
+		writeError(writer, http.StatusConflict, "reauthorization_required",
+			"Changing Google services requires authorization again")
+		return
+	}
+	if err := api.Store.UpdateConnectorConnection(
+		request.Context(), item.ID, input.Name, input.RecipientID, config,
+	); err != nil {
+		api.storeError(writer, err)
+		return
+	}
+	item.Name, item.RecipientID, item.Config = input.Name, input.RecipientID, config
+	writeJSON(writer, http.StatusOK, map[string]any{"data": item})
+}
+
+func (api *API) reauthorizeConnectorConnection(writer http.ResponseWriter, request *http.Request) {
+	var input connectors.UpdateInput
+	if !decode(writer, request, &input) {
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	input.RecipientID = strings.TrimSpace(input.RecipientID)
+	if input.Name == "" || input.RecipientID == "" {
+		writeError(writer, http.StatusBadRequest, "validation_error", "name and recipient_id are required")
+		return
+	}
+	item, _, err := api.connectorConnection(request.Context(), chi.URLParam(request, "id"))
+	if err != nil {
+		api.storeError(writer, err)
+		return
+	}
+	provider, ok := connectors.OAuthSpec(item.ConnectorID, api.Config.Connectors)
+	if !ok {
+		writeError(writer, http.StatusConflict, "reauthorization_unavailable",
+			"this connector does not use OAuth reauthorization")
+		return
+	}
+	if _, err := api.Store.GetRecipient(request.Context(), input.RecipientID); err != nil {
+		api.storeError(writer, err)
+		return
+	}
+	config, err := editableConnectorConfig(item.ConnectorID, item.Config, input.Config)
+	if err != nil {
+		writeError(writer, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if item.ConnectorID == "google" {
+		provider.Scopes = connectors.GoogleScopes(connectors.GoogleModules(config["modules"]))
+	}
+	state, err := connectors.RandomURLToken(32)
+	if err != nil {
+		api.storeError(writer, err)
+		return
+	}
+	verifier, err := connectors.RandomURLToken(48)
+	if err != nil {
+		api.storeError(writer, err)
+		return
+	}
+	verifierCipher, err := ingress.EncryptSecret(api.Config.Connectors.EncryptionKey, verifier)
+	if err != nil {
+		api.storeError(writer, err)
+		return
+	}
+	if err := api.Store.CreateOAuthState(request.Context(), connectors.OAuthState{
+		StateHash: connectors.StateHash(state), ConnectionID: item.ID,
+		ConnectorID: item.ConnectorID, ConnectionName: input.Name,
+		RecipientID: input.RecipientID, Config: config, VerifierCipher: verifierCipher,
+		ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
+	}); err != nil {
+		api.storeError(writer, err)
+		return
+	}
+	redirectURI := api.Config.Connectors.PublicURL + "/connect/v1/oauth/" +
+		url.PathEscape(item.ConnectorID) + "/callback"
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"authorization_url": connectors.OAuthValues(provider, redirectURI, state, verifier),
+	})
+}
+
+func editableConnectorConfig(
+	connectorID string,
+	current, requested map[string]string,
+) (map[string]string, error) {
+	result := make(map[string]string, len(current)+3)
+	for key, value := range current {
+		result[key] = value
+	}
+	switch connectorID {
+	case "discord":
+		mode := strings.TrimSpace(requested["mode"])
+		switch mode {
+		case connectors.DiscordModeDirectMessages, connectors.DiscordModeMentions, connectors.DiscordModeAll:
+			result["mode"] = mode
+		default:
+			return nil, fmt.Errorf("Discord mode must be direct_messages, mentions, or all")
+		}
+	case "github":
+		mode := strings.TrimSpace(requested["mode"])
+		switch mode {
+		case connectors.GitHubModeImportant, connectors.GitHubModeCode, connectors.GitHubModeWork,
+			connectors.GitHubModeCI, connectors.GitHubModeAll:
+			result["mode"] = mode
+		default:
+			return nil, fmt.Errorf("GitHub mode is invalid")
+		}
+	case "google":
+		mode := strings.TrimSpace(requested["mode"])
+		switch mode {
+		case connectors.GmailModeInbox, connectors.GmailModeUnread, connectors.GmailModeImportant:
+			result["mode"] = mode
+		default:
+			return nil, fmt.Errorf("Gmail mode must be inbox, unread, or important")
+		}
+		modules := strings.TrimSpace(requested["modules"])
+		if !connectors.ValidGoogleModules(modules) {
+			return nil, fmt.Errorf("select at least one supported Google module")
+		}
+		result["modules"] = connectors.GoogleModulesValue(connectors.GoogleModules(modules))
+		reminder := strings.TrimSpace(requested["calendar_reminder_minutes"])
+		switch reminder {
+		case "", "5", "15", "30", "60":
+		default:
+			return nil, fmt.Errorf("Calendar reminder must be 5, 15, 30, or 60 minutes")
+		}
+		if reminder == "" {
+			reminder = "15"
+		}
+		result["calendar_reminder_minutes"] = reminder
+	}
+	return result, nil
+}
+
 func (api *API) setConnectorEnabled(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
 		Enabled bool `json:"enabled"`
@@ -517,11 +675,6 @@ func (api *API) connectorOAuthCallback(writer http.ResponseWriter, request *http
 		api.redirectConnectorResult(writer, request, connectorID, "oauth_exchange_failed")
 		return
 	}
-	cipher, err := api.encryptConnectorCredentials(credentials)
-	if err != nil {
-		api.redirectConnectorResult(writer, request, connectorID, "credential_encryption_failed")
-		return
-	}
 	connectionConfig := pending.Config
 	if connectionConfig == nil {
 		connectionConfig = map[string]string{}
@@ -537,10 +690,54 @@ func (api *API) connectorOAuthCallback(writer http.ResponseWriter, request *http
 	}
 	if (connectorID == "google" || connectorID == "youtube") &&
 		credentials.RefreshToken == "" {
-		api.redirectConnectorResult(writer, request, connectorID, connectorID+"_refresh_token_missing")
+		if pending.ConnectionID == "" {
+			api.redirectConnectorResult(writer, request, connectorID, connectorID+"_refresh_token_missing")
+			return
+		}
+		existing, existingCredentials, existingErr := api.connectorConnection(
+			request.Context(), pending.ConnectionID,
+		)
+		if existingErr != nil || existing.ConnectorID != connectorID ||
+			existingCredentials.RefreshToken == "" {
+			api.redirectConnectorResult(writer, request, connectorID, connectorID+"_refresh_token_missing")
+			return
+		}
+		credentials.RefreshToken = existingCredentials.RefreshToken
+	}
+	cipher, err := api.encryptConnectorCredentials(credentials)
+	if err != nil {
+		api.redirectConnectorResult(writer, request, connectorID, "credential_encryption_failed")
 		return
 	}
 	status := "connected"
+	if pending.ConnectionID != "" {
+		existing, _, existingErr := api.connectorConnection(request.Context(), pending.ConnectionID)
+		if existingErr != nil || existing.ConnectorID != connectorID {
+			api.redirectConnectorResult(writer, request, connectorID, "connection_update_failed")
+			return
+		}
+		if err := api.Store.UpdateConnectorConnection(
+			request.Context(), existing.ID, pending.ConnectionName,
+			pending.RecipientID, connectionConfig,
+		); err != nil {
+			api.redirectConnectorResult(writer, request, connectorID, "connection_update_failed")
+			return
+		}
+		if err := api.Store.UpdateConnectorCredentials(
+			request.Context(), existing.ID, cipher, credentials.ExpiresAt,
+		); err != nil {
+			api.redirectConnectorResult(writer, request, connectorID, "connection_update_failed")
+			return
+		}
+		if err := api.Store.UpdateConnectorState(
+			request.Context(), existing.ID, status, accountLabel, "", true,
+		); err != nil {
+			api.redirectConnectorResult(writer, request, connectorID, "connection_update_failed")
+			return
+		}
+		api.redirectConnectorResult(writer, request, connectorID, "")
+		return
+	}
 	_, err = api.Store.CreateConnectorConnection(request.Context(), connectors.CreateInput{
 		ConnectorID: connectorID, Name: pending.ConnectionName,
 		RecipientID: pending.RecipientID, Config: connectionConfig,
@@ -563,7 +760,8 @@ func (api *API) enqueueConnectorEvent(
 	item := notification.Notification{
 		IdempotencyKey: "con_" + hex.EncodeToString(idempotencyDigest[:]),
 		RecipientID:    connection.RecipientID, EventType: event.EventType,
-		Subject: event.Subject, Body: event.Body, Metadata: event.Metadata,
+		Subject: event.Subject, Body: event.Body,
+		Metadata: connectors.ConnectionMetadata(connection, event.Metadata),
 	}
 	created, err := api.Store.CreateNotification(ctx, &item)
 	if err != nil {

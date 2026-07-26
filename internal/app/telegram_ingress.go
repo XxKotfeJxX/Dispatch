@@ -122,7 +122,7 @@ func (worker *Worker) runTelegramAccount(
 	dispatcher := tg.NewUpdateDispatcher()
 	handle := func(ctx context.Context, entities tg.Entities, message tg.MessageClass) error {
 		item, ok := message.(*tg.Message)
-		if !ok || item.Out || strings.TrimSpace(item.Message) == "" {
+		if !ok || item.Out {
 			return nil
 		}
 		return worker.enqueueTelegramMessage(ctx, connection, entities, item)
@@ -171,19 +171,26 @@ func (worker *Worker) enqueueTelegramMessage(
 ) error {
 	peer := fmt.Sprintf("%T:%v", message.PeerID, message.PeerID)
 	externalID := fmt.Sprintf("%s:%d", peer, message.ID)
-	subject := telegramMessageSubject(entities, message)
+	metadata := telegramMessageMetadata(entities, message)
+	body := strings.TrimSpace(message.Message)
+	if body == "" {
+		body = telegramMediaMessage(message.Media)
+	}
+	if body == "" {
+		return nil
+	}
+	subject := "Telegram message"
+	if sender, ok := metadata["sender"].(string); ok && sender != "" {
+		subject = sender
+	}
 	digest := sha256.Sum256([]byte(connection.ID + ":" + externalID))
 	item := notification.Notification{
 		IdempotencyKey: "con_" + hex.EncodeToString(digest[:]),
 		RecipientID:    connection.RecipientID,
 		EventType:      "telegram.message",
 		Subject:        subject,
-		Body:           message.Message,
-		Metadata: map[string]any{
-			"connector":  "telegram",
-			"message_id": message.ID,
-			"peer":       peer,
-		},
+		Body:           body,
+		Metadata:       connectors.ConnectionMetadata(connection, metadata),
 	}
 	if _, err := worker.Store.CreateNotification(ctx, &item); err != nil {
 		return err
@@ -196,22 +203,123 @@ func (worker *Worker) enqueueTelegramMessage(
 	return worker.Store.TouchConnectorEvent(ctx, connection.ID)
 }
 
-func telegramMessageSubject(entities tg.Entities, message *tg.Message) string {
+func telegramMessageMetadata(entities tg.Entities, message *tg.Message) map[string]any {
+	_, forwarded := message.GetFwdFrom()
+	result := map[string]any{
+		"connector":     "telegram",
+		"message_id":    message.ID,
+		"peer":          fmt.Sprintf("%T:%v", message.PeerID, message.PeerID),
+		"timestamp":     time.Unix(int64(message.Date), 0).UTC().Format(time.RFC3339),
+		"mentioned":     message.Mentioned,
+		"silent":        message.Silent,
+		"pinned":        message.Pinned,
+		"forwarded":     forwarded,
+		"has_media":     message.Media != nil,
+		"grouped_id":    message.GroupedID,
+		"views":         message.Views,
+		"forward_count": message.Forwards,
+		"text_length":   len([]rune(message.Message)),
+	}
+	if message.Media != nil {
+		result["media_type"] = telegramMediaType(message.Media)
+	}
 	switch sender := message.FromID.(type) {
 	case *tg.PeerUser:
 		if user := entities.Users[sender.UserID]; user != nil {
-			return telegramUserLabel(user)
+			label := telegramMessageUserLabel(user)
+			result["sender"] = label
+			result["sender_id"] = user.ID
+			result["sender_username"] = user.Username
+			result["author_username"] = user.Username
+			result["sender_first_name"] = user.FirstName
+			result["sender_last_name"] = user.LastName
+			result["sender_is_bot"] = user.Bot
+			result["sender_is_verified"] = user.Verified
+			result["sender_is_premium"] = user.Premium
 		}
 	case *tg.PeerChannel:
 		if channel := entities.Channels[sender.ChannelID]; channel != nil && channel.Title != "" {
-			return channel.Title
+			result["sender"] = channel.Title
+			result["sender_id"] = channel.ID
+			result["sender_username"] = channel.Username
+			result["author_username"] = channel.Username
 		}
 	case *tg.PeerChat:
 		if chat := entities.Chats[sender.ChatID]; chat != nil && chat.Title != "" {
-			return chat.Title
+			result["sender"] = chat.Title
+			result["sender_id"] = chat.ID
 		}
 	}
-	return "Telegram message"
+	if result["sender"] == nil {
+		result["sender"] = "Telegram message"
+	}
+	switch peer := message.PeerID.(type) {
+	case *tg.PeerUser:
+		result["chat_id"] = peer.UserID
+		result["chat_type"] = "private"
+		if user := entities.Users[peer.UserID]; user != nil {
+			result["chat_title"] = telegramMessageUserLabel(user)
+			result["chat_username"] = user.Username
+		}
+	case *tg.PeerChat:
+		result["chat_id"] = peer.ChatID
+		result["chat_type"] = "group"
+		if chat := entities.Chats[peer.ChatID]; chat != nil {
+			result["chat_title"] = chat.Title
+		}
+	case *tg.PeerChannel:
+		result["chat_id"] = peer.ChannelID
+		result["chat_type"] = "channel"
+		if channel := entities.Channels[peer.ChannelID]; channel != nil {
+			result["chat_title"] = channel.Title
+			result["chat_username"] = channel.Username
+			if channel.Megagroup {
+				result["chat_type"] = "supergroup"
+			}
+			if channel.Username != "" {
+				result["url"] = fmt.Sprintf("https://t.me/%s/%d", channel.Username, message.ID)
+			}
+		}
+	}
+	if result["chat_title"] == nil {
+		result["chat_title"] = "Telegram"
+	}
+	return result
+}
+
+func telegramMessageUserLabel(user *tg.User) string {
+	name := strings.TrimSpace(strings.Join([]string{user.FirstName, user.LastName}, " "))
+	if name != "" {
+		return name
+	}
+	return telegramUserLabel(user)
+}
+
+func telegramMediaMessage(media tg.MessageMediaClass) string {
+	if media == nil {
+		return ""
+	}
+	mediaType := telegramMediaType(media)
+	if mediaType == "" {
+		return "Telegram media attachment"
+	}
+	return "Telegram " + strings.ReplaceAll(mediaType, "_", " ")
+}
+
+func telegramMediaType(media tg.MessageMediaClass) string {
+	value := fmt.Sprintf("%T", media)
+	value = strings.TrimPrefix(value, "*tg.MessageMedia")
+	if value == "" || value == "Empty" {
+		return ""
+	}
+	var result strings.Builder
+	for index, character := range value {
+		if index > 0 && character >= 'A' && character <= 'Z' {
+			result.WriteByte('_')
+		}
+		result.WriteRune(character)
+	}
+	return strings.ToLower(result.String())
 }
 
 func decryptConnectorCredentials(

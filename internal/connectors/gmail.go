@@ -166,6 +166,7 @@ func NormalizeGmailMessage(message GmailMessage) NormalizedEvent {
 	link := "https://mail.google.com/mail/u/0/#inbox/" + message.ID
 	messageText, truncated := GmailMessageText(message)
 	attachments := GmailAttachments(message)
+	attachmentNames := make([]string, 0, len(attachments))
 	body := "Open this message in Gmail:\n" + link
 	if messageText != "" {
 		body = messageText + "\n\n" + body
@@ -173,6 +174,7 @@ func NormalizeGmailMessage(message GmailMessage) NormalizedEvent {
 	if len(attachments) > 0 {
 		lines := make([]string, 0, len(attachments))
 		for _, attachment := range attachments {
+			attachmentNames = append(attachmentNames, attachment.Filename)
 			description := attachment.Filename
 			if attachment.MimeType != "" {
 				description += " (" + attachment.MimeType + ")"
@@ -187,19 +189,21 @@ func NormalizeGmailMessage(message GmailMessage) NormalizedEvent {
 		Subject:    fmt.Sprintf("%s - %s", from, subject),
 		Body:       body,
 		Metadata: map[string]any{
-			"connector":      "google",
-			"provider":       "gmail",
-			"message_id":     message.ID,
-			"thread_id":      message.ThreadID,
-			"from":           from,
-			"to":             gmailHeader(message, "To"),
-			"subject":        subject,
-			"date":           gmailHeader(message, "Date"),
-			"labels":         message.LabelIDs,
-			"internal_date":  message.InternalDate,
-			"body_truncated": truncated,
-			"attachments":    attachments,
-			"url":            link,
+			"connector":        "google",
+			"provider":         "gmail",
+			"message_id":       message.ID,
+			"thread_id":        message.ThreadID,
+			"sender":           from,
+			"from":             from,
+			"to":               gmailHeader(message, "To"),
+			"subject":          subject,
+			"date":             gmailHeader(message, "Date"),
+			"labels":           message.LabelIDs,
+			"internal_date":    message.InternalDate,
+			"body_truncated":   truncated,
+			"attachments":      attachments,
+			"attachment_names": attachmentNames,
+			"url":              link,
 		},
 	}
 }

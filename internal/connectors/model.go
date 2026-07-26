@@ -83,12 +83,19 @@ type OAuthStartInput struct {
 
 type OAuthState struct {
 	StateHash      []byte
+	ConnectionID   string
 	ConnectorID    string
 	ConnectionName string
 	RecipientID    string
 	Config         map[string]string
 	VerifierCipher []byte
 	ExpiresAt      time.Time
+}
+
+type UpdateInput struct {
+	Name        string            `json:"name"`
+	RecipientID string            `json:"recipient_id"`
+	Config      map[string]string `json:"config"`
 }
 
 type Credentials struct {
@@ -112,4 +119,15 @@ type NormalizedEvent struct {
 	Subject    string
 	Body       string
 	Metadata   map[string]any
+}
+
+func ConnectionMetadata(connection Connection, metadata map[string]any) map[string]any {
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["connector"] = connection.ConnectorID
+	metadata["connection_id"] = connection.ID
+	metadata["connection_name"] = connection.Name
+	metadata["account_label"] = connection.AccountLabel
+	return metadata
 }

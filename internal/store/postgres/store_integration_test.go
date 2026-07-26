@@ -184,6 +184,16 @@ func TestConnectorConnectionLifecycle(t *testing.T) {
 		string(cipher) != "ciphertext" {
 		t.Fatalf("unexpected connection: %#v cipher=%q", got, cipher)
 	}
+	if err := store.UpdateConnectorConnection(
+		ctx, item.ID, "Renamed demo", person.ID,
+		map[string]string{"mode": "updated"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = store.GetConnectorConnection(ctx, item.ID)
+	if err != nil || got.Name != "Renamed demo" || got.Config["mode"] != "updated" {
+		t.Fatalf("connection update failed: %#v err=%v", got, err)
+	}
 	if err := store.UpdateConnectorState(
 		ctx, item.ID, "disabled", "", "", true,
 	); err != nil {

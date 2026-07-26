@@ -108,6 +108,10 @@ func normalizeGoogleDriveActivity(activity googleDriveActivity) connectors.Norma
 	if len(itemIDs) > 0 {
 		body = append(body, "", "Open in Google Drive: https://drive.google.com/open?id="+itemIDs[0])
 	}
+	link := ""
+	if len(itemIDs) > 0 {
+		link = "https://drive.google.com/open?id=" + itemIDs[0]
+	}
 	return connectors.NormalizedEvent{
 		ExternalID: "drive:" + hex.EncodeToString(digest[:]),
 		EventType:  "google.drive." + action,
@@ -120,7 +124,9 @@ func normalizeGoogleDriveActivity(activity googleDriveActivity) connectors.Norma
 			"items":     titles,
 			"item_ids":  itemIDs,
 			"actor":     actor,
+			"sender":    actor,
 			"timestamp": when,
+			"url":       link,
 		},
 	}
 }

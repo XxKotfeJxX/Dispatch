@@ -37,6 +37,11 @@ func TestParseAndNormalizeYouTubeFeed(t *testing.T) {
 		event.Metadata["video_id"] != "video-1" {
 		t.Fatalf("unexpected normalized event: %#v", event)
 	}
+	if event.Metadata["sender"] != "Dispatch Channel" ||
+		event.Metadata["channel_title"] != "Dispatch Channel" ||
+		event.Metadata["url"] != "https://www.youtube.com/watch?v=video-1" {
+		t.Fatalf("template aliases missing: %#v", event.Metadata)
+	}
 }
 
 func TestNormalizeYouTubeEntryDetectsMetadataUpdate(t *testing.T) {

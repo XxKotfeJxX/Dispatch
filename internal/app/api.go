@@ -96,6 +96,8 @@ func (api *API) Handler() http.Handler {
 			routes.Post("/connections/{id}/test", api.testConnectorConnection)
 			routes.Post("/connections/{id}/sample", api.connectorSample)
 			routes.Post("/connections/{id}/enabled", api.setConnectorEnabled)
+			routes.Put("/connections/{id}", api.updateConnectorConnection)
+			routes.Post("/connections/{id}/authorize", api.reauthorizeConnectorConnection)
 			routes.Delete("/connections/{id}", api.deleteConnectorConnection)
 		})
 	})

@@ -44,6 +44,9 @@ services:
       timeout: 3s
       retries: 30
     restart: unless-stopped
+    dns:
+      - ${DISPATCH_DNS_PRIMARY:-1.1.1.1}
+      - ${DISPATCH_DNS_SECONDARY:-8.8.8.8}
 
   worker:
     build:
@@ -68,6 +71,9 @@ services:
       mailpit:
         condition: service_started
     restart: unless-stopped
+    dns:
+      - ${DISPATCH_DNS_PRIMARY:-1.1.1.1}
+      - ${DISPATCH_DNS_SECONDARY:-8.8.8.8}
 
   web:
     build:
@@ -95,6 +101,9 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+    dns:
+      - ${DISPATCH_DNS_PRIMARY:-1.1.1.1}
+      - ${DISPATCH_DNS_SECONDARY:-8.8.8.8}
 
   github-smee:
     profiles: ["github-dev"]
@@ -114,6 +123,9 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+    dns:
+      - ${DISPATCH_DNS_PRIMARY:-1.1.1.1}
+      - ${DISPATCH_DNS_SECONDARY:-8.8.8.8}
 
   mailpit:
     image: axllent/mailpit:v1.27

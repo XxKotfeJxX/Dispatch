@@ -200,6 +200,8 @@ func normalizeGoogleChatMessage(
 			"space_id":    space.Name,
 			"space_name":  spaceLabel,
 			"sender":      sender,
+			"sender_id":   strings.TrimPrefix(message.Sender.Name, "users/"),
+			"space_type":  space.SpaceType,
 			"created":     message.CreateTime,
 			"attachments": attachmentNames,
 		},

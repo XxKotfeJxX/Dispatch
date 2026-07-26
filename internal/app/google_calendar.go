@@ -163,6 +163,16 @@ func normalizeGoogleCalendarEvent(event googleCalendarEvent) connectors.Normaliz
 		eventType = "google.calendar.created"
 	}
 	summary := calendarSummary(event)
+	creator := calendarPerson(event.Creator.DisplayName, event.Creator.Email)
+	organizer := calendarPerson(event.Organizer.DisplayName, event.Organizer.Email)
+	sender := organizer
+	if sender == "" {
+		sender = creator
+	}
+	attendees := make([]string, 0, len(event.Attendees))
+	for _, attendee := range event.Attendees {
+		attendees = append(attendees, calendarPerson(attendee.DisplayName, attendee.Email))
+	}
 	start := calendarEventTime(event.Start.DateTime, event.Start.Date)
 	end := calendarEventTime(event.End.DateTime, event.End.Date)
 	bodyParts := []string{"Start: " + start}
@@ -198,8 +208,23 @@ func normalizeGoogleCalendarEvent(event googleCalendarEvent) connectors.Normaliz
 			"url":         event.HTMLLink,
 			"updated":     event.Updated,
 			"event_title": summary,
+			"sender":      sender,
+			"creator":     creator,
+			"organizer":   organizer,
+			"attendees":   attendees,
 		},
 	}
+}
+
+func calendarPerson(name, email string) string {
+	name, email = strings.TrimSpace(name), strings.TrimSpace(email)
+	if name != "" && email != "" {
+		return name + " <" + email + ">"
+	}
+	if name != "" {
+		return name
+	}
+	return email
 }
 
 func calendarSummary(event googleCalendarEvent) string {

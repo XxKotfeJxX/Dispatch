@@ -65,6 +65,10 @@ func RedactMetadata(metadata map[string]any) map[string]any {
 	allowed := map[string]bool{
 		"order_id": true, "attempt": true, "service": true, "environment": true,
 		"severity": true, "region": true, "report_type": true, "error_code": true,
+		"connector": true, "provider": true, "sender": true, "author_username": true,
+		"sender_username": true, "chat_title": true, "channel_name": true,
+		"guild_name": true, "repository": true, "action": true, "attachment_names": true,
+		"actor": true, "event_title": true, "task_title": true, "channel_title": true,
 	}
 	result := make(map[string]any)
 	for key, value := range metadata {

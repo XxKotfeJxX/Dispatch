@@ -166,7 +166,7 @@ func NormalizeGitHubEvent(event, delivery string, payload GitHubPayload) Normali
 			"connector":       "github",
 			"event":           event,
 			"action":          action,
-			"repository":      payload.Repository.FullName,
+			"repository":      repository,
 			"sender":          payload.Sender.Login,
 			"installation_id": payload.Installation.ID,
 			"delivery_id":     delivery,

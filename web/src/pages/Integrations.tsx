@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CheckCircle2, CircleAlert, ExternalLink, FlaskConical, Info,
-  KeyRound, Play, Power, RefreshCcw, Trash2, Webhook, X,
+  KeyRound, Play, Power, RefreshCcw, Settings2, Trash2, Webhook, X,
 } from 'lucide-react'
 import { FormEvent, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -64,12 +64,13 @@ export default function Integrations(){
   const catalog=useQuery({queryKey:['connectors'],queryFn:()=>api<CatalogResponse>('/connectors')})
   const recipients=useQuery({queryKey:['recipients'],queryFn:()=>api<{data:Recipient[]}>('/recipients')})
   const [selected,setSelected]=useState<Manifest|null>(null)
+  const [editing,setEditing]=useState<Connection|null>(null)
   const [unavailable,setUnavailable]=useState<Manifest|null>(null)
   const [telegramFlow,setTelegramFlow]=useState<{auth_id:string;step:'code'|'password'}|null>(null)
   const [advanced,setAdvanced]=useState(false),[notice,setNotice]=useState('')
   const [form,setForm]=useState({name:'',recipient_id:'',values:{} as Record<string,string>})
 
-  const reset=()=>{setSelected(null);setTelegramFlow(null);setForm({name:'',recipient_id:'',values:{}})}
+  const reset=()=>{setSelected(null);setEditing(null);setTelegramFlow(null);setForm({name:'',recipient_id:'',values:{}})}
   const connect=useMutation({
     mutationFn:async()=>{
       if(!selected)throw new Error('Select a connector')
@@ -102,6 +103,27 @@ export default function Integrations(){
   const test=useMutation({
     mutationFn:(id:string)=>api<{data:{message:string};status:string;activation_error?:string}>(`/connections/${id}/test`,{method:'POST',body:'{}'}),
     onSuccess:value=>{setNotice(`${value.data.message}${value.activation_error?` ${value.activation_error}`:''}`);client.invalidateQueries({queryKey:['connectors']})},
+  })
+  const save=useMutation({
+    mutationFn:async()=>{
+      if(!editing)throw new Error('Select a connection')
+      const payload={name:form.name,recipient_id:form.recipient_id,config:form.values}
+      if(editing.connector_id==='google'&&form.values.modules!==editing.config.modules){
+        const value=await api<{authorization_url:string}>(`/connections/${editing.id}/authorize`,{
+          method:'POST',body:JSON.stringify(payload),
+        })
+        location.assign(value.authorization_url)
+        return null
+      }
+      return api<{data:Connection}>(`/connections/${editing.id}`,{
+        method:'PUT',body:JSON.stringify(payload),
+      })
+    },
+    onSuccess:value=>{
+      if(!value)return
+      setNotice(`${value.data.name} settings saved.`)
+      reset();client.invalidateQueries({queryKey:['connectors']})
+    },
   })
   const telegramConnect=useMutation({
     mutationFn:()=>{
@@ -154,6 +176,7 @@ export default function Integrations(){
   }
   const choose=(manifest:Manifest)=>{
     setNotice('')
+    setEditing(null)
     if(!manifest.configured){
       setUnavailable(manifest)
       return
@@ -173,9 +196,22 @@ export default function Integrations(){
             }:{},
     })
   }
+  const configure=(connection:Connection)=>{
+    const manifest=catalog.data?.data.find(item=>item.id===connection.connector_id)
+    if(!manifest)return
+    setNotice('')
+    setEditing(connection)
+    setSelected(manifest)
+    setForm({
+      name:connection.name,
+      recipient_id:connection.recipient_id,
+      values:{...connection.config},
+    })
+  }
   const submit=(event:FormEvent)=>{
     event.preventDefault()
-    if(selected?.id==='telegram')telegramConnect.mutate()
+    if(editing)save.mutate()
+    else if(selected?.id==='telegram')telegramConnect.mutate()
     else connect.mutate()
   }
   const toggleGoogleModule=(module:string)=>{
@@ -224,6 +260,7 @@ export default function Integrations(){
           <div className="mt-5 flex flex-wrap gap-2">
             <button className="btn-secondary" disabled={test.isPending} onClick={()=>test.mutate(connection.id)}><RefreshCcw size={14}/>Test</button>
             <button className="btn-secondary" disabled={sample.isPending} onClick={()=>sample.mutate(connection.id)}><Play size={14}/>Send sample</button>
+            <button className="btn-secondary" disabled={save.isPending} onClick={()=>configure(connection)}><Settings2 size={14}/>Settings</button>
             <button className="btn-secondary" disabled={toggle.isPending} onClick={()=>toggle.mutate(connection)}><Power size={14}/>{connection.enabled?'Pause':'Enable'}</button>
             <button className="btn-secondary text-red-300" disabled={remove.isPending} onClick={()=>{
               if(window.confirm(`Disconnect ${connection.name}? Dispatch will stop receiving events and revoke provider access where supported.`)) remove.mutate(connection.id)
@@ -285,23 +322,24 @@ export default function Integrations(){
     {selected&&<div className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-black/75 p-5 backdrop-blur-sm" onMouseDown={event=>{if(event.target===event.currentTarget)reset()}}>
       <form className="panel w-full max-w-xl space-y-5" onSubmit={submit}>
         <div className="flex items-start justify-between gap-4">
-          <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-cyan-400">Connect service</p><h2 className="mt-1">{selected.name}</h2><p className="muted mt-2">{selected.summary}</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-cyan-400">{editing?'Integration settings':'Connect service'}</p><h2 className="mt-1">{selected.name}</h2><p className="muted mt-2">{editing?'Change its name, destination, and notification preferences without creating another connection.':selected.summary}</p></div>
           <button type="button" aria-label="Close" className="text-slate-500 hover:text-white" onClick={reset}><X/></button>
         </div>
         {!telegramFlow&&<div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1.5 text-xs text-slate-400"><span>Connection name</span><input className="field" required value={form.name} onChange={event=>setForm(previous=>({...previous,name:event.target.value}))}/></label>
           <label className="space-y-1.5 text-xs text-slate-400"><span>Send notifications to</span><select className="field" required value={form.recipient_id} onChange={event=>setForm(previous=>({...previous,recipient_id:event.target.value}))}>{recipients.data!.data.map(person=><option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
         </div>}
-        {!telegramFlow&&(selected.fields??[]).map(field=><label className="block space-y-1.5 text-xs text-slate-400" key={field.name}><span>{field.label}</span><input className="field" type={field.type} required={field.required} autoComplete={field.name==='phone_number'?'tel':field.secret?'new-password':'off'} placeholder={field.placeholder} value={form.values[field.name]??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,[field.name]:event.target.value}}))}/>{field.help&&<span className="block leading-5 text-slate-600">{field.help}</span>}</label>)}
+        {!editing&&!telegramFlow&&(selected.fields??[]).map(field=><label className="block space-y-1.5 text-xs text-slate-400" key={field.name}><span>{field.label}</span><input className="field" type={field.type} required={field.required} autoComplete={field.name==='phone_number'?'tel':field.secret?'new-password':'off'} placeholder={field.placeholder} value={form.values[field.name]??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,[field.name]:event.target.value}}))}/>{field.help&&<span className="block leading-5 text-slate-600">{field.help}</span>}</label>)}
         {!telegramFlow&&selected.id==='discord'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Receive from the installed server</span><select className="field" value={form.values.mode??'direct_messages'} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,mode:event.target.value}}))}><option value="direct_messages">Direct messages to Dispatch only</option><option value="mentions">My mentions and @everyone</option><option value="all">Every readable server message</option></select><span className="block leading-5 text-slate-600">Server message text requires Message Content Intent; direct messages do not.</span></label>}
         {!telegramFlow&&selected.id==='github'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Notify me about</span><select className="field" value={form.values.mode??'important'} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,mode:event.target.value}}))}><option value="important">Important activity</option><option value="code">Code, pull requests and releases</option><option value="work">Issues, discussions and project work</option><option value="ci">Actions, checks and deployments</option><option value="all">Every subscribed GitHub event</option></select><span className="block leading-5 text-slate-600">On GitHub you can choose all repositories or only specific repositories during installation.</span></label>}
         {!telegramFlow&&selected.id==='google'&&<div className="space-y-4"><fieldset className="space-y-2"><legend className="mb-2 text-xs text-slate-400">Google services</legend>{googleModules.map(module=>{const checked=(form.values.modules??'').split(',').includes(module.id);return <label className={`flex cursor-pointer gap-3 rounded-xl border p-3 transition ${checked?'border-cyan-400/25 bg-cyan-400/6':'border-white/8 bg-white/[.02]'}`} key={module.id}><input type="checkbox" className="mt-1 accent-cyan-400" checked={checked} onChange={()=>toggleGoogleModule(module.id)}/><span><span className="block text-sm text-slate-200">{module.label}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{module.help}</span></span></label>})}</fieldset>{(form.values.modules??'').split(',').includes('gmail')&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Gmail notifications</span><select className="field" value={form.values.mode??'inbox'} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,mode:event.target.value}}))}><option value="inbox">Every new inbox message</option><option value="unread">New unread inbox messages</option><option value="important">New important inbox messages</option></select><span className="block leading-5 text-slate-600">Message text and attachment names/types are used for summaries and AI analysis. Attachment contents are not processed.</span></label>}{(form.values.modules??'').split(',').includes('calendar')&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Calendar reminder</span><select className="field" value={form.values.calendar_reminder_minutes??'15'} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,calendar_reminder_minutes:event.target.value}}))}><option value="5">5 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option></select></label>}<p className="text-xs leading-5 text-slate-600">Google only asks for read-only permissions required by the selected services. At least one service is required.</p></div>}
         {!telegramFlow&&selected.id==='youtube'&&<div className="rounded-xl border border-red-400/15 bg-red-400/[.04] p-4"><p className="text-sm text-slate-200">Dispatch will read your YouTube subscriptions and watch every subscribed channel for new uploads.</p><p className="mt-2 text-xs leading-5 text-slate-500">No Channel ID, domain, webhook, or installed YouTube app is required. Existing videos are not imported; polling begins after authorization.</p></div>}
         {telegramFlow?.step==='code'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Telegram sign-in code</span><input className="field text-lg tracking-[.25em]" inputMode="numeric" autoComplete="one-time-code" required autoFocus value={form.values.code??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,code:event.target.value}}))}/><span className="block leading-5 text-slate-600">Open Telegram on an already signed-in device and copy the code from the Telegram service chat.</span></label>}
         {telegramFlow?.step==='password'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Telegram two-step verification password</span><input className="field" type="password" autoComplete="current-password" required autoFocus value={form.values.password??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,password:event.target.value}}))}/><span className="block leading-5 text-slate-600">The password is sent directly to Telegram for verification and is never stored.</span></label>}
+        {editing?.connector_id==='google'&&form.values.modules!==editing.config.modules&&<p className="rounded-lg border border-amber-300/15 bg-amber-300/[.04] p-3 text-xs leading-5 text-amber-100">Changing the enabled Google services requires one authorization screen. Dispatch will update this connection instead of creating a new one.</p>}
         {recipients.data!.data.length===0&&!telegramFlow&&<p className="rounded-lg bg-amber-400/8 p-3 text-sm text-amber-200">Create a recipient first so Dispatch knows where to deliver notifications.</p>}
-        {(connect.error||telegramConnect.error)&&<p className="rounded-lg bg-red-400/8 p-3 text-sm text-red-300">{(connect.error||telegramConnect.error)?.message}</p>}
-        <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={reset}>Cancel</button><button className="btn" disabled={connect.isPending||telegramConnect.isPending||(!telegramFlow&&!form.recipient_id)||(selected.id==='google'&&!form.values.modules)}>{connect.isPending||telegramConnect.isPending?'Connecting…':telegramFlow?.step==='code'?'Verify code':telegramFlow?.step==='password'?'Verify password':selected.id==='telegram'?'Send sign-in code':selected.id==='discord'?'Continue to Discord':selected.id==='github'?'Continue to GitHub':selected.id==='google'?'Continue to Google':selected.id==='youtube'?'Continue to YouTube':selected.auth==='oauth2'?'Continue to sign in':'Connect'}</button></div>
+        {(connect.error||telegramConnect.error||save.error)&&<p className="rounded-lg bg-red-400/8 p-3 text-sm text-red-300">{(connect.error||telegramConnect.error||save.error)?.message}</p>}
+        <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={reset}>Cancel</button><button className="btn" disabled={connect.isPending||telegramConnect.isPending||save.isPending||(!telegramFlow&&!form.recipient_id)||(selected.id==='google'&&!form.values.modules)}>{save.isPending?'Saving…':editing?'Save settings':connect.isPending||telegramConnect.isPending?'Connecting…':telegramFlow?.step==='code'?'Verify code':telegramFlow?.step==='password'?'Verify password':selected.id==='telegram'?'Send sign-in code':selected.id==='discord'?'Continue to Discord':selected.id==='github'?'Continue to GitHub':selected.id==='google'?'Continue to Google':selected.id==='youtube'?'Continue to YouTube':selected.auth==='oauth2'?'Continue to sign in':'Connect'}</button></div>
       </form>
     </div>}
 
