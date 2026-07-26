@@ -1,0 +1,357 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  CheckCircle2, CircleAlert, ExternalLink, FlaskConical, Info,
+  KeyRound, Play, Power, RefreshCcw, Settings2, Trash2, Webhook, X,
+} from 'lucide-react'
+import { FormEvent, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { api, Recipient } from '../api'
+import { BrandLogo } from '../components/BrandLogo'
+import { Failure, Loading } from '../components/State'
+import Sources from './Sources'
+
+type Field = {
+  name:string; label:string; type:string; required:boolean; secret:boolean
+  placeholder?:string; help?:string
+}
+type Manifest = {
+  id:string; name:string; summary:string; category:string; auth:string; transport:string
+  availability:'available'|'setup_required'|'limited'|'unavailable'
+  configured:boolean; capabilities:string[]; fields:Field[]; setup_hint?:string
+  documentation?:string; authorization_url?:string
+}
+type Connection = {
+  id:string; connector_id:string; name:string; recipient_id:string
+  status:'connected'|'action_required'|'error'|'disabled'; account_label?:string
+  config:Record<string,string>; last_tested_at?:string; last_event_at?:string
+  last_error?:string; enabled:boolean
+}
+type CatalogResponse = {data:Manifest[];connections:Connection[]}
+type CreateResponse = {data:Connection;test:{message:string};credentials_stored:boolean}
+type TelegramAuthResponse = {
+  auth_id?:string; step:'code'|'password'|'connected'; message:string; data?:Connection
+}
+
+const consumerServices = new Set(['telegram', 'discord', 'github', 'google', 'youtube'])
+const googleModules=[
+  {id:'gmail',label:'Gmail',help:'New inbox mail with message text and attachment metadata.'},
+  {id:'calendar',label:'Calendar + Meet',help:'Event changes, cancellations, upcoming reminders and Meet links.'},
+  {id:'drive',label:'Drive + Docs/Sheets/Slides',help:'File edits, comments, moves and sharing changes.'},
+  {id:'tasks',label:'Google Tasks',help:'Updated, completed and deleted tasks and deadlines.'},
+  {id:'chat',label:'Google Chat',help:'New messages in accessible spaces; generally requires Google Workspace.'},
+]
+const statusStyles:Record<Connection['status'],string>={
+  connected:'border-emerald-400/20 bg-emerald-400/8 text-emerald-300',
+  action_required:'border-amber-400/20 bg-amber-400/8 text-amber-300',
+  error:'border-red-400/20 bg-red-400/8 text-red-300',
+  disabled:'border-slate-400/20 bg-slate-400/8 text-slate-400',
+}
+const integrationErrors:Record<string,string>={
+  invalid_installation_callback:'GitHub App exists, but this installation was opened outside Dispatch. Finish the administrator setup, then start the installation from the GitHub card.',
+  github_installation_must_start_in_dispatch:'GitHub App exists, but this installation was opened outside Dispatch. Finish the administrator setup, then start the installation from the GitHub card.',
+  github_installation_id_missing:'GitHub did not return an installation ID. Open the GitHub card in Dispatch and install or configure the App again.',
+  github_installation_id_invalid:'GitHub returned an invalid installation ID. Restart the installation from the GitHub card.',
+  invalid_or_expired_state:'The authorization session expired. Start the connection again from its Dispatch card.',
+  installation_verification_failed:'Dispatch could not verify this GitHub App installation. Check the App ID and private key.',
+  google_refresh_token_missing:'Google did not grant background access. Reconnect Google and approve the requested services on the consent screen.',
+  youtube_refresh_token_missing:'Google did not grant background YouTube access. Reconnect YouTube and approve read-only access on the consent screen.',
+  oauth_exchange_failed:'The provider did not complete authorization. Check its OAuth client, redirect URI and consent-screen settings, then try again.',
+}
+
+export default function Integrations(){
+  const client=useQueryClient(),[params]=useSearchParams()
+  const advancedRef=useRef<HTMLElement>(null)
+  const catalog=useQuery({queryKey:['connectors'],queryFn:()=>api<CatalogResponse>('/connectors')})
+  const recipients=useQuery({queryKey:['recipients'],queryFn:()=>api<{data:Recipient[]}>('/recipients')})
+  const [selected,setSelected]=useState<Manifest|null>(null)
+  const [editing,setEditing]=useState<Connection|null>(null)
+  const [unavailable,setUnavailable]=useState<Manifest|null>(null)
+  const [telegramFlow,setTelegramFlow]=useState<{auth_id:string;step:'code'|'password'}|null>(null)
+  const [advanced,setAdvanced]=useState(false),[notice,setNotice]=useState('')
+  const [form,setForm]=useState({name:'',recipient_id:'',values:{} as Record<string,string>})
+
+  const reset=()=>{setSelected(null);setEditing(null);setTelegramFlow(null);setForm({name:'',recipient_id:'',values:{}})}
+  const connect=useMutation({
+    mutationFn:async()=>{
+      if(!selected)throw new Error('Select a connector')
+      if(selected.auth==='oauth2'||selected.auth==='app_install'){
+        const endpoint=selected.auth==='app_install'
+          ? `/connectors/${selected.id}/install`
+          : `/connectors/${selected.id}/authorize`
+        const result=await api<{authorization_url:string}>(endpoint,{
+          method:'POST',body:JSON.stringify({
+            name:form.name,recipient_id:form.recipient_id,config:form.values,
+          }),
+        })
+        location.assign(result.authorization_url)
+        return null
+      }
+      const config:Record<string,string>={},credentials:Record<string,string>={}
+      ;(selected.fields??[]).forEach(field=>{(field.secret?credentials:config)[field.name]=form.values[field.name]??''})
+      return api<CreateResponse>('/connections',{method:'POST',body:JSON.stringify({
+        connector_id:selected.id,name:form.name,recipient_id:form.recipient_id,config,credentials,
+      })})
+    },
+    onSuccess:value=>{
+      if(!value)return
+      setNotice(value.data.status==='connected'
+        ? `${value.data.name} connected successfully.`
+        : `${value.test.message} ${value.data.last_error??''}`)
+      reset();client.invalidateQueries({queryKey:['connectors']})
+    },
+  })
+  const test=useMutation({
+    mutationFn:(id:string)=>api<{data:{message:string};status:string;activation_error?:string}>(`/connections/${id}/test`,{method:'POST',body:'{}'}),
+    onSuccess:value=>{setNotice(`${value.data.message}${value.activation_error?` ${value.activation_error}`:''}`);client.invalidateQueries({queryKey:['connectors']})},
+  })
+  const save=useMutation({
+    mutationFn:async()=>{
+      if(!editing)throw new Error('Select a connection')
+      const payload={name:form.name,recipient_id:form.recipient_id,config:form.values}
+      if(editing.connector_id==='google'&&form.values.modules!==editing.config.modules){
+        const value=await api<{authorization_url:string}>(`/connections/${editing.id}/authorize`,{
+          method:'POST',body:JSON.stringify(payload),
+        })
+        location.assign(value.authorization_url)
+        return null
+      }
+      return api<{data:Connection}>(`/connections/${editing.id}`,{
+        method:'PUT',body:JSON.stringify(payload),
+      })
+    },
+    onSuccess:value=>{
+      if(!value)return
+      setNotice(`${value.data.name} settings saved.`)
+      reset();client.invalidateQueries({queryKey:['connectors']})
+    },
+  })
+  const telegramConnect=useMutation({
+    mutationFn:()=>{
+      if(!telegramFlow){
+        return api<TelegramAuthResponse>('/connectors/telegram/auth/start',{
+          method:'POST',body:JSON.stringify({
+            name:form.name,recipient_id:form.recipient_id,
+            phone_number:form.values.phone_number,
+          }),
+        })
+      }
+      return api<TelegramAuthResponse>(`/connectors/telegram/auth/${telegramFlow.auth_id}/${telegramFlow.step}`,{
+        method:'POST',body:JSON.stringify(
+          telegramFlow.step==='code'
+            ? {code:form.values.code}
+            : {password:form.values.password},
+        ),
+      })
+    },
+    onSuccess:value=>{
+      if(value.step==='connected'){
+        setNotice(value.message)
+        reset()
+        client.invalidateQueries({queryKey:['connectors']})
+        return
+      }
+      if(value.auth_id&&(value.step==='code'||value.step==='password')){
+        setTelegramFlow({auth_id:value.auth_id,step:value.step})
+        setNotice(value.message)
+        setForm(previous=>({...previous,values:{...previous.values,code:'',password:''}}))
+      }
+    },
+  })
+  const sample=useMutation({
+    mutationFn:(id:string)=>api<{data:{notification_id:string}}>(`/connections/${id}/sample`,{method:'POST',body:'{}'}),
+    onSuccess:value=>setNotice(`Test notification ${value.data.notification_id} entered the delivery queue.`),
+  })
+  const toggle=useMutation({
+    mutationFn:(connection:Connection)=>api(`/connections/${connection.id}/enabled`,{method:'POST',body:JSON.stringify({enabled:!connection.enabled})}),
+    onSuccess:()=>client.invalidateQueries({queryKey:['connectors']}),
+  })
+  const remove=useMutation({
+    mutationFn:(id:string)=>api(`/connections/${id}`,{method:'DELETE'}),
+    onSuccess:()=>client.invalidateQueries({queryKey:['connectors']}),
+  })
+
+  const openAdvanced=()=>{
+    setAdvanced(true)
+    window.setTimeout(()=>advancedRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),0)
+  }
+  const choose=(manifest:Manifest)=>{
+    setNotice('')
+    setEditing(null)
+    if(!manifest.configured){
+      setUnavailable(manifest)
+      return
+    }
+    setSelected(manifest)
+    setForm({
+      name:`${manifest.name} connection`,
+      recipient_id:recipients.data?.data[0]?.id??'',
+      values:manifest.id==='discord'
+        ? {mode:'direct_messages'}
+        : manifest.id==='github'
+          ? {mode:'important'}
+          : manifest.id==='google'?{
+              mode:'inbox',
+              modules:'gmail,calendar,drive,tasks',
+              calendar_reminder_minutes:'15',
+            }:{},
+    })
+  }
+  const configure=(connection:Connection)=>{
+    const manifest=catalog.data?.data.find(item=>item.id===connection.connector_id)
+    if(!manifest)return
+    setNotice('')
+    setEditing(connection)
+    setSelected(manifest)
+    setForm({
+      name:connection.name,
+      recipient_id:connection.recipient_id,
+      values:{...connection.config},
+    })
+  }
+  const submit=(event:FormEvent)=>{
+    event.preventDefault()
+    if(editing)save.mutate()
+    else if(selected?.id==='telegram')telegramConnect.mutate()
+    else connect.mutate()
+  }
+  const toggleGoogleModule=(module:string)=>{
+    setForm(previous=>{
+      const selected=new Set((previous.values.modules??'').split(',').filter(Boolean))
+      if(selected.has(module))selected.delete(module)
+      else selected.add(module)
+      return {...previous,values:{...previous.values,modules:googleModules.filter(item=>selected.has(item.id)).map(item=>item.id).join(',')}}
+    })
+  }
+  if(catalog.isLoading||recipients.isLoading)return <Loading/>
+  if(catalog.error)return <Failure error={catalog.error}/>
+  if(recipients.error)return <Failure error={recipients.error}/>
+
+  const manifests=catalog.data!.data.filter(item=>consumerServices.has(item.id))
+  const demo=catalog.data!.data.find(item=>item.id==='demo')
+  const integrationError=params.get('integration_error')??''
+  const callbackMessage=params.get('connected')
+    ? `${params.get('connected')} authorization completed.`
+    : integrationError
+      ? integrationErrors[integrationError]??`Authorization failed: ${integrationError}`
+      :''
+
+  return <div className="space-y-8">
+    <header className="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[.2em] text-cyan-400">Your services</p>
+        <h1>Integrations</h1>
+        <p className="muted mt-1 max-w-2xl">Choose a service and sign in. Dispatch handles the technical setup after authorization.</p>
+      </div>
+      <button className="btn-secondary" onClick={openAdvanced}><Webhook size={16}/>Developer webhooks</button>
+    </header>
+
+    {(notice||callbackMessage)&&<div className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${integrationError?'border-amber-400/20 bg-amber-400/5 text-amber-100':'border-cyan-400/20 bg-cyan-400/5 text-cyan-100'}`}>{integrationError?<CircleAlert className="mt-0.5 shrink-0 text-amber-300" size={18}/>:<CheckCircle2 className="mt-0.5 shrink-0 text-cyan-300" size={18}/>}<span>{notice||callbackMessage}</span></div>}
+
+    {catalog.data!.connections.length>0&&<section className="space-y-3">
+      <div><h2>Connected accounts</h2><p className="muted mt-1">Check a connection, send a sample, pause it, or disconnect it.</p></div>
+      <div className="grid gap-4 lg:grid-cols-2">{catalog.data!.connections.map(connection=>{
+        const manifest=catalog.data!.data.find(item=>item.id===connection.connector_id)
+        return <article className="panel" key={connection.id}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex gap-3"><span className="grid size-11 place-items-center rounded-xl bg-white/5"><BrandLogo service={connection.connector_id} className="size-5"/></span><div><h2>{connection.name}</h2><p className="mt-1 text-sm text-slate-500">{manifest?.name} · {connection.account_label||'account pending'}{connection.config.guild_name?` · ${connection.config.guild_name}`:''}</p></div></div>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-wide ${statusStyles[connection.status]}`}>{connection.status.replace('_',' ')}</span>
+          </div>
+          {connection.last_error&&<p className="mt-4 rounded-lg bg-amber-400/5 p-3 text-xs text-amber-200">{connection.last_error}</p>}
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button className="btn-secondary" disabled={test.isPending} onClick={()=>test.mutate(connection.id)}><RefreshCcw size={14}/>Test</button>
+            <button className="btn-secondary" disabled={sample.isPending} onClick={()=>sample.mutate(connection.id)}><Play size={14}/>Send sample</button>
+            <button className="btn-secondary" disabled={save.isPending} onClick={()=>configure(connection)}><Settings2 size={14}/>Settings</button>
+            <button className="btn-secondary" disabled={toggle.isPending} onClick={()=>toggle.mutate(connection)}><Power size={14}/>{connection.enabled?'Pause':'Enable'}</button>
+            <button className="btn-secondary text-red-300" disabled={remove.isPending} onClick={()=>{
+              if(window.confirm(`Disconnect ${connection.name}? Dispatch will stop receiving events and revoke provider access where supported.`)) remove.mutate(connection.id)
+            }}><Trash2 size={14}/>Disconnect</button>
+          </div>
+        </article>
+      })}</div>
+    </section>}
+
+    <section className="space-y-4" aria-labelledby="service-catalog-title">
+      <div><h2 id="service-catalog-title">Connect a service</h2><p className="muted mt-1">Click a card to begin. Hover the info icon for supported events and connection details.</p></div>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        {manifests.map(manifest=><article
+          className="group relative isolate h-64 overflow-visible rounded-3xl border border-white/10 bg-gradient-to-br from-white/[.08] to-white/[.025] shadow-xl shadow-black/10 transition duration-300 hover:z-20 hover:-translate-y-1 hover:border-cyan-300/35 hover:shadow-cyan-950/30 focus-within:z-20 focus-within:border-cyan-300/50"
+          key={manifest.id}
+        >
+          <button
+            aria-label={`Connect ${manifest.name}`}
+            className="absolute inset-0 z-0 rounded-3xl outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+            onClick={()=>choose(manifest)}
+          />
+          <div className="pointer-events-none absolute inset-0 grid place-items-center p-12 transition duration-300 group-hover:scale-105">
+            <BrandLogo service={manifest.id} className="h-24 w-32 max-w-full"/>
+          </div>
+          <div className="absolute left-4 top-4 z-20">
+            <span
+              aria-label={`About ${manifest.name}`}
+              className="peer grid size-9 cursor-help place-items-center rounded-full border border-white/10 bg-slate-950/75 text-slate-300 backdrop-blur transition hover:border-cyan-300/40 hover:text-cyan-200 focus:border-cyan-300/40 focus:text-cyan-200 focus:outline-none"
+              role="button"
+              tabIndex={0}
+            ><Info size={17}/></span>
+            <aside className="pointer-events-none absolute left-0 top-12 z-30 w-72 translate-y-1 rounded-2xl border border-white/10 bg-slate-950/95 p-4 text-left opacity-0 shadow-2xl backdrop-blur transition peer-hover:translate-y-0 peer-hover:opacity-100 peer-focus:translate-y-0 peer-focus:opacity-100">
+              <h3 className="font-semibold text-white">{manifest.name}</h3>
+              <p className="mt-2 text-sm leading-5 text-slate-400">{manifest.summary}</p>
+              <ul className="mt-3 space-y-1.5 text-xs text-slate-300">{manifest.capabilities.slice(0,4).map(capability=><li key={capability}>• {capability}</li>)}</ul>
+              <p className={`mt-3 text-xs ${manifest.configured?'text-emerald-300':'text-amber-300'}`}>{manifest.configured?'Ready to connect':'Not enabled on this installation'}</p>
+            </aside>
+          </div>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 translate-y-2 rounded-b-3xl bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent px-6 pb-5 pt-12 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
+            <p className="text-center text-xl font-semibold text-white">{manifest.name}</p>
+          </div>
+        </article>)}
+      </div>
+    </section>
+
+    <section className="grid gap-4 md:grid-cols-2">
+      {demo&&<button className="panel flex items-center gap-4 text-left transition hover:border-cyan-300/30" onClick={()=>choose(demo)}>
+        <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-cyan-400/10 text-cyan-300"><FlaskConical size={22}/></span>
+        <span><strong className="block text-slate-100">Test Dispatch</strong><span className="muted mt-1 block text-sm">Generate a safe sample event without connecting an account.</span></span>
+      </button>}
+      <button className="panel flex items-center gap-4 text-left transition hover:border-cyan-300/30" onClick={openAdvanced}>
+        <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-indigo-400/10 text-indigo-300"><KeyRound size={22}/></span>
+        <span><strong className="block text-slate-100">Developer tools</strong><span className="muted mt-1 block text-sm">Connect an unsupported service using a signed webhook.</span></span>
+      </button>
+    </section>
+
+    {advanced&&<section ref={advancedRef} className="scroll-mt-20 space-y-3 border-t border-white/8 pt-7"><div className="flex items-center gap-3"><KeyRound className="text-cyan-300" size={20}/><div><h2>Developer webhook sources</h2><p className="muted">Advanced tools for custom systems and unsupported services.</p></div></div><Sources startOpen/></section>}
+
+    {selected&&<div className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-black/75 p-5 backdrop-blur-sm" onMouseDown={event=>{if(event.target===event.currentTarget)reset()}}>
+      <form className="panel w-full max-w-xl space-y-5" onSubmit={submit}>
+        <div className="flex items-start justify-between gap-4">
+          <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-cyan-400">{editing?'Integration settings':'Connect service'}</p><h2 className="mt-1">{selected.name}</h2><p className="muted mt-2">{editing?'Change its name, destination, and notification preferences without creating another connection.':selected.summary}</p></div>
+          <button type="button" aria-label="Close" className="text-slate-500 hover:text-white" onClick={reset}><X/></button>
+        </div>
+        {!telegramFlow&&<div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1.5 text-xs text-slate-400"><span>Connection name</span><input className="field" required value={form.name} onChange={event=>setForm(previous=>({...previous,name:event.target.value}))}/></label>
+          <label className="space-y-1.5 text-xs text-slate-400"><span>Send notifications to</span><select className="field" required value={form.recipient_id} onChange={event=>setForm(previous=>({...previous,recipient_id:event.target.value}))}>{recipients.data!.data.map(person=><option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+        </div>}
+        {!editing&&!telegramFlow&&(selected.fields??[]).map(field=><label className="block space-y-1.5 text-xs text-slate-400" key={field.name}><span>{field.label}</span><input className="field" type={field.type} required={field.required} autoComplete={field.name==='phone_number'?'tel':field.secret?'new-password':'off'} placeholder={field.placeholder} value={form.values[field.name]??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,[field.name]:event.target.value}}))}/>{field.help&&<span className="block leading-5 text-slate-600">{field.help}</span>}</label>)}
+        {!telegramFlow&&selected.id==='discord'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Receive from the installed server</span><select className="field" value={form.values.mode??'direct_messages'} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,mode:event.target.value}}))}><option value="direct_messages">Direct messages to Dispatch only</option><option value="mentions">My mentions and @everyone</option><option value="all">Every readable server message</option></select><span className="block leading-5 text-slate-600">Server message text requires Message Content Intent; direct messages do not.</span></label>}
+        {!telegramFlow&&selected.id==='github'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Notify me about</span><select className="field" value={form.values.mode??'important'} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,mode:event.target.value}}))}><option value="important">Important activity</option><option value="code">Code, pull requests and releases</option><option value="work">Issues, discussions and project work</option><option value="ci">Actions, checks and deployments</option><option value="all">Every subscribed GitHub event</option></select><span className="block leading-5 text-slate-600">On GitHub you can choose all repositories or only specific repositories during installation.</span></label>}
+        {!telegramFlow&&selected.id==='google'&&<div className="space-y-4"><fieldset className="space-y-2"><legend className="mb-2 text-xs text-slate-400">Google services</legend>{googleModules.map(module=>{const checked=(form.values.modules??'').split(',').includes(module.id);return <label className={`flex cursor-pointer gap-3 rounded-xl border p-3 transition ${checked?'border-cyan-400/25 bg-cyan-400/6':'border-white/8 bg-white/[.02]'}`} key={module.id}><input type="checkbox" className="mt-1 accent-cyan-400" checked={checked} onChange={()=>toggleGoogleModule(module.id)}/><span><span className="block text-sm text-slate-200">{module.label}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{module.help}</span></span></label>})}</fieldset>{(form.values.modules??'').split(',').includes('gmail')&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Gmail notifications</span><select className="field" value={form.values.mode??'inbox'} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,mode:event.target.value}}))}><option value="inbox">Every new inbox message</option><option value="unread">New unread inbox messages</option><option value="important">New important inbox messages</option></select><span className="block leading-5 text-slate-600">Message text and attachment names/types are used for summaries and AI analysis. Attachment contents are not processed.</span></label>}{(form.values.modules??'').split(',').includes('calendar')&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Calendar reminder</span><select className="field" value={form.values.calendar_reminder_minutes??'15'} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,calendar_reminder_minutes:event.target.value}}))}><option value="5">5 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option></select></label>}<p className="text-xs leading-5 text-slate-600">Google only asks for read-only permissions required by the selected services. At least one service is required.</p></div>}
+        {!telegramFlow&&selected.id==='youtube'&&<div className="rounded-xl border border-red-400/15 bg-red-400/[.04] p-4"><p className="text-sm text-slate-200">Dispatch will read your YouTube subscriptions and watch every subscribed channel for new uploads.</p><p className="mt-2 text-xs leading-5 text-slate-500">No Channel ID, domain, webhook, or installed YouTube app is required. Existing videos are not imported; polling begins after authorization.</p></div>}
+        {telegramFlow?.step==='code'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Telegram sign-in code</span><input className="field text-lg tracking-[.25em]" inputMode="numeric" autoComplete="one-time-code" required autoFocus value={form.values.code??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,code:event.target.value}}))}/><span className="block leading-5 text-slate-600">Open Telegram on an already signed-in device and copy the code from the Telegram service chat.</span></label>}
+        {telegramFlow?.step==='password'&&<label className="block space-y-1.5 text-xs text-slate-400"><span>Telegram two-step verification password</span><input className="field" type="password" autoComplete="current-password" required autoFocus value={form.values.password??''} onChange={event=>setForm(previous=>({...previous,values:{...previous.values,password:event.target.value}}))}/><span className="block leading-5 text-slate-600">The password is sent directly to Telegram for verification and is never stored.</span></label>}
+        {editing?.connector_id==='google'&&form.values.modules!==editing.config.modules&&<p className="rounded-lg border border-amber-300/15 bg-amber-300/[.04] p-3 text-xs leading-5 text-amber-100">Changing the enabled Google services requires one authorization screen. Dispatch will update this connection instead of creating a new one.</p>}
+        {recipients.data!.data.length===0&&!telegramFlow&&<p className="rounded-lg bg-amber-400/8 p-3 text-sm text-amber-200">Create a recipient first so Dispatch knows where to deliver notifications.</p>}
+        {(connect.error||telegramConnect.error||save.error)&&<p className="rounded-lg bg-red-400/8 p-3 text-sm text-red-300">{(connect.error||telegramConnect.error||save.error)?.message}</p>}
+        <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={reset}>Cancel</button><button className="btn" disabled={connect.isPending||telegramConnect.isPending||save.isPending||(!telegramFlow&&!form.recipient_id)||(selected.id==='google'&&!form.values.modules)}>{save.isPending?'Saving…':editing?'Save settings':connect.isPending||telegramConnect.isPending?'Connecting…':telegramFlow?.step==='code'?'Verify code':telegramFlow?.step==='password'?'Verify password':selected.id==='telegram'?'Send sign-in code':selected.id==='discord'?'Continue to Discord':selected.id==='github'?'Continue to GitHub':selected.id==='google'?'Continue to Google':selected.id==='youtube'?'Continue to YouTube':selected.auth==='oauth2'?'Continue to sign in':'Connect'}</button></div>
+      </form>
+    </div>}
+
+    {unavailable&&<div className="fixed inset-0 z-40 grid place-items-center bg-black/75 p-5 backdrop-blur-sm" onMouseDown={event=>{if(event.target===event.currentTarget)setUnavailable(null)}}>
+      <section className="panel w-full max-w-lg">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3"><span className="grid size-12 place-items-center rounded-xl bg-white/5"><BrandLogo service={unavailable.id} className="size-7"/></span><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-amber-300">Temporarily unavailable</p><h2>{unavailable.name}</h2></div></div>
+          <button aria-label="Close availability message" className="text-slate-500 hover:text-white" onClick={()=>setUnavailable(null)}><X/></button>
+        </div>
+        <div className="mt-5 flex gap-3 rounded-xl border border-amber-300/15 bg-amber-300/[.04] p-4"><CircleAlert className="mt-0.5 shrink-0 text-amber-300" size={20}/><p className="text-sm leading-6 text-slate-300">This service has not been enabled by the administrator of this Dispatch installation yet. You do not need to enter tokens or configure anything yourself.</p></div>
+        <div className="mt-6 flex justify-end gap-2">{unavailable.documentation&&<a className="btn-secondary" href={unavailable.documentation} target="_blank" rel="noreferrer"><ExternalLink size={15}/>Learn more</a>}<button className="btn" onClick={()=>setUnavailable(null)}>Close</button></div>
+      </section>
+    </div>}
+  </div>
+}

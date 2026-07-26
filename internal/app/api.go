@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/mail"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,7 +24,6 @@ import (
 	"dispatch/internal/config"
 	"dispatch/internal/notification"
 	"dispatch/internal/recipient"
-	"dispatch/internal/routing"
 	"dispatch/internal/store/postgres"
 	"dispatch/internal/template"
 )
@@ -49,6 +50,11 @@ func (api *API) Handler() http.Handler {
 	})
 	router.Get("/readyz", api.ready)
 	router.Get("/metrics", api.metrics)
+	router.Post("/internal/v1/discord/events", api.discordBridgeEvent)
+	router.With(api.rateLimit).Post("/ingest/v1/{slug}", api.receiveIngress)
+	router.With(api.rateLimit).Get("/connect/v1/oauth/{connector}/callback", api.connectorOAuthCallback)
+	router.With(api.rateLimit).Get("/connect/v1/github/setup", api.completeGitHubInstall)
+	router.Post("/connect/v1/github/events", api.githubWebhook)
 	router.Group(func(protected chi.Router) {
 		protected.Use(api.authenticate, api.rateLimit)
 		protected.Route("/api/v1", func(routes chi.Router) {
@@ -65,15 +71,34 @@ func (api *API) Handler() http.Handler {
 			routes.Get("/recipients/{id}", api.getRecipient)
 			routes.Put("/recipients/{id}", api.updateRecipient)
 			routes.Delete("/recipients/{id}", api.deleteRecipient)
+			routes.Post("/recipient-setups/mailpit", api.startMailpitRecipientSetup)
+			routes.Post("/recipient-setups/mailpit/{id}/verify", api.verifyMailpitRecipientSetup)
+			routes.Post("/recipient-setups/telegram", api.startTelegramRecipientSetup)
+			routes.Get("/recipient-setups/{id}", api.getRecipientSetup)
 			routes.Get("/templates", api.listTemplates)
 			routes.Post("/templates", api.createTemplate)
 			routes.Put("/templates/{id}", api.updateTemplate)
 			routes.Delete("/templates/{id}", api.deleteTemplate)
-			routes.Get("/rules", api.listRules)
-			routes.Post("/rules", api.createRule)
-			routes.Put("/rules/{id}", api.updateRule)
-			routes.Delete("/rules/{id}", api.deleteRule)
 			routes.Post("/ai/preview", api.aiPreview)
+			routes.Get("/sources", api.listIngressSources)
+			routes.Post("/sources", api.createIngressSource)
+			routes.Post("/sources/{id}/rotate-secret", api.rotateIngressSecret)
+			routes.Post("/sources/{id}/enabled", api.setIngressSourceEnabled)
+			routes.Get("/sources/{id}/events", api.listIngressEvents)
+			routes.Delete("/sources/{id}", api.deleteIngressSource)
+			routes.Get("/connectors", api.listConnectors)
+			routes.Post("/connectors/{connector}/authorize", api.beginConnectorOAuth)
+			routes.Post("/connectors/github/install", api.beginGitHubInstall)
+			routes.Post("/connectors/telegram/auth/start", api.beginTelegramAccountAuth)
+			routes.Post("/connectors/telegram/auth/{authID}/code", api.completeTelegramAccountCode)
+			routes.Post("/connectors/telegram/auth/{authID}/password", api.completeTelegramAccountPassword)
+			routes.Post("/connections", api.createConnectorConnection)
+			routes.Post("/connections/{id}/test", api.testConnectorConnection)
+			routes.Post("/connections/{id}/sample", api.connectorSample)
+			routes.Post("/connections/{id}/enabled", api.setConnectorEnabled)
+			routes.Put("/connections/{id}", api.updateConnectorConnection)
+			routes.Post("/connections/{id}/authorize", api.reauthorizeConnectorConnection)
+			routes.Delete("/connections/{id}", api.deleteConnectorConnection)
 		})
 	})
 	return router
@@ -192,10 +217,12 @@ func (api *API) getRecipient(writer http.ResponseWriter, request *http.Request) 
 }
 func (api *API) createRecipient(writer http.ResponseWriter, request *http.Request) {
 	var item recipient.Recipient
-	if !decode(writer, request, &item) || !validateRecipient(item) {
-		if item.Name == "" {
-			writeError(writer, 400, "validation_error", "name and at least one destination are required")
-		}
+	if !decode(writer, request, &item) {
+		return
+	}
+	normalizeRecipient(&item)
+	if err := validateRecipient(item); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	if err := api.Store.CreateRecipient(request.Context(), &item); err != nil {
@@ -210,8 +237,9 @@ func (api *API) updateRecipient(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	item.ID = chi.URLParam(request, "id")
-	if !validateRecipient(item) {
-		writeError(writer, 400, "validation_error", "name and at least one destination are required")
+	normalizeRecipient(&item)
+	if err := validateRecipient(item); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	if err := api.Store.UpdateRecipient(request.Context(), item); err != nil {
@@ -241,11 +269,18 @@ func (api *API) createTemplate(writer http.ResponseWriter, request *http.Request
 	if !decode(writer, request, &item) {
 		return
 	}
-	if item.Name == "" || item.BodyTemplate == "" || !validChannels([]string{item.Channel}) {
-		writeError(writer, 400, "validation_error", "valid name, channel and body_template are required")
+	normalizeTemplate(&item)
+	item.Enabled = true
+	if err := template.Validate(item); err != nil {
+		writeError(writer, 400, "validation_error", err.Error())
 		return
 	}
 	if err := api.Store.CreateTemplate(request.Context(), &item); err != nil {
+		if errors.Is(err, postgres.ErrConflict) {
+			writeError(writer, 409, "fallback_exists",
+				"this service already has a fallback template; add a condition or edit the existing fallback")
+			return
+		}
 		api.storeError(writer, err)
 		return
 	}
@@ -257,7 +292,17 @@ func (api *API) updateTemplate(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	item.ID = chi.URLParam(request, "id")
+	normalizeTemplate(&item)
+	if err := template.Validate(item); err != nil {
+		writeError(writer, 400, "validation_error", err.Error())
+		return
+	}
 	if err := api.Store.UpdateTemplate(request.Context(), item); err != nil {
+		if errors.Is(err, postgres.ErrConflict) {
+			writeError(writer, 409, "fallback_exists",
+				"this service already has a fallback template; add a condition or edit the existing fallback")
+			return
+		}
 		api.storeError(writer, err)
 		return
 	}
@@ -270,47 +315,22 @@ func (api *API) deleteTemplate(writer http.ResponseWriter, request *http.Request
 	}
 	writer.WriteHeader(204)
 }
-func (api *API) listRules(writer http.ResponseWriter, request *http.Request) {
-	items, err := api.Store.ListRules(request.Context())
-	if err != nil {
-		api.storeError(writer, err)
-		return
+
+func normalizeTemplate(item *template.Template) {
+	item.Name = strings.TrimSpace(item.Name)
+	item.Service = strings.ToLower(strings.TrimSpace(item.Service))
+	item.Channel = strings.ToLower(strings.TrimSpace(item.Channel))
+	if item.Service == "" {
+		item.Service = template.ServiceAny
 	}
-	writeJSON(writer, 200, map[string]any{"data": items})
-}
-func (api *API) createRule(writer http.ResponseWriter, request *http.Request) {
-	var item routing.Rule
-	if !decode(writer, request, &item) {
-		return
+	if item.Channel == "" {
+		item.Channel = template.ChannelAll
 	}
-	if item.Name == "" || item.Condition == nil || item.Action == nil {
-		writeError(writer, 400, "validation_error", "name, condition and action are required")
-		return
+	for index := range item.Conditions {
+		item.Conditions[index].Field = strings.ToLower(strings.TrimSpace(item.Conditions[index].Field))
+		item.Conditions[index].Operator = strings.ToLower(strings.TrimSpace(item.Conditions[index].Operator))
+		item.Conditions[index].Value = strings.TrimSpace(item.Conditions[index].Value)
 	}
-	if err := api.Store.CreateRule(request.Context(), &item); err != nil {
-		api.storeError(writer, err)
-		return
-	}
-	writeJSON(writer, 201, map[string]any{"data": item})
-}
-func (api *API) updateRule(writer http.ResponseWriter, request *http.Request) {
-	var item routing.Rule
-	if !decode(writer, request, &item) {
-		return
-	}
-	item.ID = chi.URLParam(request, "id")
-	if err := api.Store.UpdateRule(request.Context(), item); err != nil {
-		api.storeError(writer, err)
-		return
-	}
-	writeJSON(writer, 200, map[string]any{"data": item})
-}
-func (api *API) deleteRule(writer http.ResponseWriter, request *http.Request) {
-	if err := api.Store.DeleteRule(request.Context(), chi.URLParam(request, "id")); err != nil {
-		api.storeError(writer, err)
-		return
-	}
-	writer.WriteHeader(204)
 }
 
 func (api *API) dashboard(writer http.ResponseWriter, request *http.Request) {
@@ -323,21 +343,49 @@ func (api *API) dashboard(writer http.ResponseWriter, request *http.Request) {
 }
 func (api *API) settings(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, 200, map[string]any{"data": map[string]any{
-		"version":            buildinfo.Version,
-		"ai":                 map[string]any{"enabled": api.Config.AI.Enabled, "model": api.Config.AI.Model, "prompt_version": api.Config.AI.PromptVersion},
-		"channels":           map[string]bool{"email": api.Config.SMTP.Host != "", "telegram": api.Config.Telegram.Token != "", "webhook": api.Config.Webhook.Enabled},
+		"version": buildinfo.Version,
+		"auth":    map[string]bool{"enabled": api.Config.ConsoleAuthEnabled},
+		"ai": map[string]any{
+			"enabled":           api.Config.AI.Enabled,
+			"model":             api.Config.AI.Model,
+			"prompt_version":    api.Config.AI.PromptVersion,
+			"min_confidence":    api.Config.AI.MinConfidence,
+			"timeout":           api.Config.AI.Timeout.String(),
+			"max_input_chars":   api.Config.AI.MaxInputChars,
+			"summary_max_chars": api.Config.AI.SummaryMaxChars,
+			"thinking_level":    api.Config.AI.ThinkingLevel,
+			"categories":        ai.Categories,
+		},
+		"channels": map[string]bool{"email": api.Config.SMTP.Host != "", "telegram": api.Config.Telegram.Token != "", "webhook": api.Config.Webhook.Enabled},
+		"connectors": map[string]bool{
+			"public_https": strings.HasPrefix(
+				strings.ToLower(api.Config.Connectors.PublicURL), "https://",
+			),
+			"github_app": api.Config.Connectors.GitHubAppSlug != "" &&
+				api.Config.Connectors.GitHubAppID > 0 &&
+				api.Config.Connectors.GitHubWebhookSecret != "" &&
+				api.Config.Connectors.GitHubPrivateKeyB64 != "",
+			"discord_app": api.Config.Connectors.DiscordClientID != "" &&
+				api.Config.Connectors.DiscordClientSecret != "" &&
+				api.Config.Connectors.DiscordBotToken != "",
+			"telegram_account": api.Config.Connectors.TelegramAPIID > 0 &&
+				api.Config.Connectors.TelegramAPIHash != "",
+			"google_oauth": api.Config.Connectors.GoogleClientID != "" &&
+				api.Config.Connectors.GoogleClientSecret != "",
+		},
 		"worker_concurrency": api.Config.WorkerConcurrency,
 	}})
 }
 func (api *API) aiPreview(writer http.ResponseWriter, request *http.Request) {
 	if api.AI == nil || !api.Config.AI.Enabled {
-		writeError(writer, 503, "ai_unavailable", "AI routing is disabled")
+		writeError(writer, 503, "ai_unavailable", "AI analysis is disabled")
 		return
 	}
 	var input ai.DecisionInput
 	if !decode(writer, request, &input) {
 		return
 	}
+	input.Metadata = ai.RedactMetadata(input.Metadata)
 	ctx, cancel := context.WithTimeout(request.Context(), api.Config.AI.Timeout)
 	defer cancel()
 	decision, _, err := api.AI.Decide(ctx, input)
@@ -345,7 +393,7 @@ func (api *API) aiPreview(writer http.ResponseWriter, request *http.Request) {
 		writeError(writer, 502, "ai_provider_error", "AI preview failed")
 		return
 	}
-	writeJSON(writer, 200, map[string]any{"data": decision})
+	writeJSON(writer, 200, map[string]any{"data": ai.NormalizeDecision(decision)})
 }
 
 func (api *API) events(writer http.ResponseWriter, request *http.Request) {
@@ -394,6 +442,10 @@ func (api *API) metrics(writer http.ResponseWriter, _ *http.Request) {
 
 func (api *API) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !api.Config.ConsoleAuthEnabled {
+			next.ServeHTTP(writer, request)
+			return
+		}
 		provided := strings.TrimSpace(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "))
 		if provided == "" {
 			provided = request.Header.Get("X-API-Key")
@@ -520,6 +572,84 @@ func validChannels(channels []string) bool {
 	}
 	return true
 }
-func validateRecipient(item recipient.Recipient) bool {
-	return item.Name != "" && (item.Email != "" || item.TelegramChatID != "" || item.WebhookURL != "") && validChannels(item.Preferences.DefaultChannels) && validChannels(item.Preferences.DisabledChannels)
+func normalizeRecipient(item *recipient.Recipient) {
+	item.Name = strings.TrimSpace(item.Name)
+	item.DestinationType = strings.ToLower(strings.TrimSpace(item.DestinationType))
+	item.DestinationLabel = strings.TrimSpace(item.DestinationLabel)
+	item.Email = strings.ToLower(strings.TrimSpace(item.Email))
+	item.TelegramChatID = strings.TrimSpace(item.TelegramChatID)
+	item.WebhookURL = strings.TrimSpace(item.WebhookURL)
+	if item.DestinationType == "" {
+		switch {
+		case item.TelegramChatID != "":
+			item.DestinationType = "telegram"
+		case item.WebhookURL != "":
+			item.DestinationType = "webhook"
+		default:
+			item.DestinationType = "email"
+		}
+	}
+	if item.DestinationLabel == "" {
+		switch item.DestinationType {
+		case "email", "mailpit":
+			item.DestinationLabel = item.Email
+		case "telegram":
+			item.DestinationLabel = "Telegram"
+		case "webhook":
+			item.DestinationLabel = "Webhook"
+		}
+	}
+}
+
+func validateRecipient(item recipient.Recipient) error {
+	if item.Name == "" {
+		return fmt.Errorf("recipient name is required")
+	}
+	if !validChannels(item.Preferences.DefaultChannels) ||
+		!validChannels(item.Preferences.DisabledChannels) {
+		return fmt.Errorf("unsupported delivery channel")
+	}
+	if len(item.Preferences.DefaultChannels) == 0 {
+		return fmt.Errorf("select a delivery channel")
+	}
+	hasDefaultChannel := func(expected string) bool {
+		for _, channel := range item.Preferences.DefaultChannels {
+			if channel == expected {
+				return true
+			}
+		}
+		return false
+	}
+	switch item.DestinationType {
+	case "email", "mailpit":
+		address, err := mail.ParseAddress(item.Email)
+		if err != nil || address.Address != item.Email {
+			return fmt.Errorf("enter a valid email address")
+		}
+		if !hasDefaultChannel("email") {
+			return fmt.Errorf("email destination must use the email channel")
+		}
+	case "telegram":
+		if item.TelegramChatID == "" {
+			return fmt.Errorf("connect Telegram through the Dispatch bot")
+		}
+		if !hasDefaultChannel("telegram") {
+			return fmt.Errorf("Telegram destination must use the Telegram channel")
+		}
+	case "webhook":
+		target, err := url.ParseRequestURI(item.WebhookURL)
+		if err != nil || (target.Scheme != "http" && target.Scheme != "https") ||
+			target.Host == "" || target.User != nil {
+			return fmt.Errorf("enter a valid HTTP or HTTPS webhook URL")
+		}
+		if item.DestinationLabel == "" {
+			return fmt.Errorf("service name is required")
+		}
+		if !hasDefaultChannel("webhook") {
+			return fmt.Errorf("webhook destination must use the webhook channel")
+		}
+	default:
+		return fmt.Errorf("unsupported destination type")
+	}
+	return nil
 }

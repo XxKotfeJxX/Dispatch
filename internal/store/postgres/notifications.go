@@ -203,7 +203,7 @@ func (store *Store) SaveAIDecision(ctx context.Context, record ai.Record) error 
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NULLIF($16,''),$17)`,
 		record.ID, record.NotificationID, record.Provider, record.Model, record.PromptVersion,
 		record.Decision.Category, record.Decision.Priority, record.Decision.Summary,
-		record.Decision.RecommendedChannels, record.Decision.SendImmediately,
+		[]string{}, false,
 		record.Decision.Confidence, record.Decision.ReasonCodes, raw, record.DurationMS,
 		record.Status, record.FallbackReason, record.CreatedAt)
 	return err
@@ -224,10 +224,12 @@ func (store *Store) AIDecisions(ctx context.Context, notificationID string) ([]a
 	for rows.Next() {
 		var record ai.Record
 		var raw []byte
+		var legacyRecommendedChannels []string
+		var legacySendImmediately bool
 		if err := rows.Scan(&record.ID, &record.NotificationID, &record.Provider, &record.Model,
 			&record.PromptVersion, &record.Decision.Category, &record.Decision.Priority,
-			&record.Decision.Summary, &record.Decision.RecommendedChannels,
-			&record.Decision.SendImmediately, &record.Decision.Confidence,
+			&record.Decision.Summary, &legacyRecommendedChannels,
+			&legacySendImmediately, &record.Decision.Confidence,
 			&record.Decision.ReasonCodes, &raw, &record.DurationMS, &record.Status,
 			&record.FallbackReason, &record.CreatedAt); err != nil {
 			return nil, err
@@ -240,10 +242,10 @@ func (store *Store) AIDecisions(ctx context.Context, notificationID string) ([]a
 	return result, rows.Err()
 }
 
-func (store *Store) SetNotificationRouting(ctx context.Context, id, category, priority, summary string) error {
+func (store *Store) SetNotificationAnalysis(ctx context.Context, id, category, priority, summary string) error {
 	command, err := store.pool.Exec(ctx, `
 		UPDATE notifications SET category=$2,priority=$3,summary=$4,status='queued',updated_at=now()
-		WHERE id=$1 AND status IN ('received','analyzing','failed')`, id, category, priority, summary)
+		WHERE id=$1 AND status IN ('received','analyzing','queued','failed')`, id, category, priority, summary)
 	if err != nil {
 		return err
 	}

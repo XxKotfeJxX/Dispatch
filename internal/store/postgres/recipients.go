@@ -22,15 +22,19 @@ func (store *Store) CreateRecipient(ctx context.Context, item *recipient.Recipie
 	}
 	_, err = store.pool.Exec(ctx, `
 		INSERT INTO recipients
-		    (id, name, email, telegram_chat_id, webhook_url, preferences_json, created_at, updated_at)
-		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),$6,$7,$7)`,
-		item.ID, item.Name, item.Email, item.TelegramChatID, item.WebhookURL, preferences, now)
+		    (id,name,destination_type,destination_label,email,telegram_chat_id,
+		     webhook_url,preferences_json,created_at,updated_at)
+		VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),
+		        NULLIF($7,''),$8,$9,$9)`,
+		item.ID, item.Name, item.DestinationType, item.DestinationLabel, item.Email,
+		item.TelegramChatID, item.WebhookURL, preferences, now)
 	return err
 }
 
 func (store *Store) ListRecipients(ctx context.Context) ([]recipient.Recipient, error) {
 	rows, err := store.pool.Query(ctx, `
-		SELECT id,name,COALESCE(email,''),COALESCE(telegram_chat_id,''),
+		SELECT id,name,destination_type,COALESCE(destination_label,''),
+		       COALESCE(email,''),COALESCE(telegram_chat_id,''),
 		       COALESCE(webhook_url,''),preferences_json,created_at,updated_at
 		FROM recipients ORDER BY name,id`)
 	if err != nil {
@@ -50,7 +54,8 @@ func (store *Store) ListRecipients(ctx context.Context) ([]recipient.Recipient, 
 
 func (store *Store) GetRecipient(ctx context.Context, id string) (recipient.Recipient, error) {
 	item, err := scanRecipient(store.pool.QueryRow(ctx, `
-		SELECT id,name,COALESCE(email,''),COALESCE(telegram_chat_id,''),
+		SELECT id,name,destination_type,COALESCE(destination_label,''),
+		       COALESCE(email,''),COALESCE(telegram_chat_id,''),
 		       COALESCE(webhook_url,''),preferences_json,created_at,updated_at
 		FROM recipients WHERE id=$1`, id))
 	return item, notFound(err)
@@ -59,7 +64,8 @@ func (store *Store) GetRecipient(ctx context.Context, id string) (recipient.Reci
 func scanRecipient(scanner interface{ Scan(...any) error }) (recipient.Recipient, error) {
 	var item recipient.Recipient
 	var preferences []byte
-	err := scanner.Scan(&item.ID, &item.Name, &item.Email, &item.TelegramChatID,
+	err := scanner.Scan(&item.ID, &item.Name, &item.DestinationType,
+		&item.DestinationLabel, &item.Email, &item.TelegramChatID,
 		&item.WebhookURL, &preferences, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return item, err
@@ -74,10 +80,13 @@ func (store *Store) UpdateRecipient(ctx context.Context, item recipient.Recipien
 		return err
 	}
 	command, err := store.pool.Exec(ctx, `
-		UPDATE recipients SET name=$2,email=NULLIF($3,''),telegram_chat_id=NULLIF($4,''),
-		    webhook_url=NULLIF($5,''),preferences_json=$6,updated_at=now()
+		UPDATE recipients
+		SET name=$2,destination_type=$3,destination_label=NULLIF($4,''),
+		    email=NULLIF($5,''),telegram_chat_id=NULLIF($6,''),
+		    webhook_url=NULLIF($7,''),preferences_json=$8,updated_at=now()
 		WHERE id=$1`,
-		item.ID, item.Name, item.Email, item.TelegramChatID, item.WebhookURL, preferences)
+		item.ID, item.Name, item.DestinationType, item.DestinationLabel,
+		item.Email, item.TelegramChatID, item.WebhookURL, preferences)
 	if err != nil {
 		return err
 	}

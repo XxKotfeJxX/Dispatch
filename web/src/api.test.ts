@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { apiKey, setApiKey } from './api'
 
 describe('apiKey', () => {
-  it('uses a local development default', () => {
-    expect(apiKey()).toBe('dispatch-local-development-key')
+  beforeEach(() => setApiKey(''))
+
+  it('does not send a console credential by default', () => {
+    expect(apiKey()).toBe('')
   })
   it('keeps a configured key only in process memory', () => {
     setApiKey('configured-key')

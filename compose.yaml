@@ -28,9 +28,13 @@ services:
     environment:
       DATABASE_URL: postgres://dispatch:dispatch@postgres:5432/dispatch?sslmode=disable
       API_ADDR: :8080
+      CONSOLE_AUTH_ENABLED: ${CONSOLE_AUTH_ENABLED:-false}
       API_KEY: ${API_KEY:-dispatch-local-development-key}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8090}
       DEMO_SEED: ${DEMO_SEED:-true}
+      MAILPIT_SMTP_HOST: ${MAILPIT_SMTP_HOST:-mailpit}
+      MAILPIT_SMTP_PORT: ${MAILPIT_SMTP_PORT:-1025}
+      MAILPIT_PUBLIC_URL: ${MAILPIT_PUBLIC_URL:-http://localhost:8025}
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +44,9 @@ services:
       timeout: 3s
       retries: 30
     restart: unless-stopped
+    dns:
+      - ${DISPATCH_DNS_PRIMARY:-1.1.1.1}
+      - ${DISPATCH_DNS_SECONDARY:-8.8.8.8}
 
   worker:
     build:
@@ -55,8 +62,8 @@ services:
       DATABASE_URL: postgres://dispatch:dispatch@postgres:5432/dispatch?sslmode=disable
       WORKER_ID: dispatch-worker-compose
       AI_ENABLED: ${AI_ENABLED:-false}
-      SMTP_HOST: mailpit
-      SMTP_PORT: 1025
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       WEBHOOK_ALLOW_PRIVATE: ${WEBHOOK_ALLOW_PRIVATE:-false}
     depends_on:
       postgres:
@@ -64,6 +71,9 @@ services:
       mailpit:
         condition: service_started
     restart: unless-stopped
+    dns:
+      - ${DISPATCH_DNS_PRIMARY:-1.1.1.1}
+      - ${DISPATCH_DNS_SECONDARY:-8.8.8.8}
 
   web:
     build:
@@ -75,11 +85,67 @@ services:
       - "${WEB_PORT:-8090}:80"
     restart: unless-stopped
 
+  discord-bridge:
+    build:
+      context: .
+      target: runtime
+      args:
+        VERSION: ${DISPATCH_VERSION:-dev}
+    command: ["/usr/local/bin/dispatch-discord-bridge"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DISCORD_INTERNAL_URL: http://api:8080/internal/v1/discord/events
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    dns:
+      - ${DISPATCH_DNS_PRIMARY:-1.1.1.1}
+      - ${DISPATCH_DNS_SECONDARY:-8.8.8.8}
+
+  github-smee:
+    profiles: ["github-dev"]
+    image: node:22-alpine
+    command:
+      - sh
+      - -c
+      - >-
+        test -n "$$GITHUB_SMEE_URL" &&
+        npx --yes --package=smee-client smee
+        -u "$$GITHUB_SMEE_URL"
+        -t http://api:8080/connect/v1/github/events
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    dns:
+      - ${DISPATCH_DNS_PRIMARY:-1.1.1.1}
+      - ${DISPATCH_DNS_SECONDARY:-8.8.8.8}
+
   mailpit:
-    image: axllent/mailpit:v1.27
+    image: ${DISPATCH_INBOX_IMAGE:-ghcr.io/xxkotfejxx/dispatch-inbox:preview}
     ports:
       - "8025:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: ${MAILPIT_MAX_MESSAGES:-0}
+      MP_MAX_AGE: ${MAILPIT_MAX_AGE:-}
+      MP_LABEL: Dispatch Inbox storage
+      MP_HIDE_DELETE_ALL_BUTTON: "true"
+      MP_BLOCK_REMOTE_CSS_AND_FONTS: "true"
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_UI_AUTH_FILE: /data/auth
+      MP_UI_REGISTRATION: ${MAILPIT_ALLOW_REGISTRATION:-true}
+    volumes:
+      - dispatch-mailpit:/data
+      - ${MAILPIT_AUTH_FILE:-./.local/inbox-auth}:/data/auth
     restart: unless-stopped
 
 volumes:
   dispatch-postgres:
+  dispatch-mailpit:

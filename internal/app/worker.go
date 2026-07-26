@@ -17,6 +17,7 @@ import (
 	"dispatch/internal/notification"
 	"dispatch/internal/routing"
 	"dispatch/internal/store/postgres"
+	"dispatch/internal/template"
 )
 
 type Worker struct {
@@ -37,6 +38,34 @@ func (worker *Worker) Run(ctx context.Context) error {
 	}
 	worker.Logger.Info("worker started", "id", worker.Config.WorkerID, "concurrency", worker.Config.WorkerConcurrency, "recovered_jobs", recovered)
 	var group sync.WaitGroup
+	if worker.Config.Telegram.Token != "" {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			worker.telegramDeliveryPairingLoop(ctx)
+		}()
+	}
+	if worker.Config.Connectors.TelegramAPIID > 0 &&
+		worker.Config.Connectors.TelegramAPIHash != "" {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			worker.telegramAccountLoop(ctx)
+		}()
+	}
+	if worker.Config.Connectors.GoogleClientID != "" &&
+		worker.Config.Connectors.GoogleClientSecret != "" {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			worker.googleLoop(ctx)
+		}()
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			worker.youtubeLoop(ctx)
+		}()
+	}
 	for index := 0; index < worker.Config.WorkerConcurrency; index++ {
 		group.Add(1)
 		go func(slot int) {
@@ -109,15 +138,11 @@ func (worker *Worker) processNotification(ctx context.Context, notificationID st
 	if err != nil {
 		return err
 	}
-	rules, err := worker.Store.ListRules(ctx)
-	if err != nil {
-		return err
-	}
 	var decision *ai.Decision
 	record := ai.Record{
 		ID: "aid_" + uuid.NewString(), NotificationID: item.ID, Provider: "fallback",
 		Model: "", PromptVersion: worker.Config.AI.PromptVersion, Status: ai.StatusSkipped, CreatedAt: time.Now().UTC(),
-		Decision:    ai.Decision{RecommendedChannels: []string{}, ReasonCodes: []string{}},
+		Decision:    ai.Decision{ReasonCodes: []string{}},
 		RawResponse: map[string]any{},
 	}
 	if worker.Config.AI.Enabled && worker.AI != nil {
@@ -127,34 +152,38 @@ func (worker *Worker) processNotification(ctx context.Context, notificationID st
 		cancel()
 		record.Provider, record.Model, record.RawResponse = worker.AI.Name(), worker.AI.Model(), raw
 		record.DurationMS = time.Since(started).Milliseconds()
-		if aiErr == nil && ai.ValidateDecision(value) {
+		value = ai.NormalizeDecision(value)
+		if aiErr == nil && ai.ValidateDecisionWithSummaryLimit(value, worker.Config.AI.SummaryMaxChars) {
 			decision, record.Decision, record.Status = &value, value, ai.StatusCompleted
 		} else {
-			record.Status, record.FallbackReason = ai.StatusFallbackUsed, "provider_or_validation_error"
-			if errors.Is(aiErr, context.DeadlineExceeded) {
-				record.FallbackReason = "timeout"
+			record.Status = ai.StatusFallbackUsed
+			if aiErr != nil {
+				record.FallbackReason = ai.FallbackReason(aiErr)
+			} else {
+				record.FallbackReason = "invalid_output"
 			}
 		}
 	} else {
 		record.Status, record.FallbackReason = ai.StatusFallbackUsed, "disabled_or_unconfigured"
 	}
 	final := routing.Decide(routing.PolicyInput{
-		Notification: item, Recipient: person, Rules: rules, AI: decision,
+		Notification: item, Recipient: person, AI: decision,
 		AIConfigured: worker.Config.AI.Enabled && worker.AI != nil, Now: time.Now().UTC(),
-	}, worker.Config.AI.MinConfidence, worker.providerAvailability(), worker.Config.Webhook.Enabled)
+	}, worker.Config.AI.MinConfidence, worker.providerAvailability())
 	if len(final.Channels) == 0 {
 		record.Status, record.FallbackReason = ai.StatusFallbackUsed, "no_available_destination"
 		_ = worker.Store.SaveAIDecision(ctx, record)
 		_ = worker.Store.TransitionNotification(ctx, item.ID, notification.StatusFailed)
 		return nil
 	}
-	if final.FallbackReason != "" && !final.UsedAI {
+	if final.FallbackReason != "" && !final.UsedAI &&
+		(record.FallbackReason == "" || decision != nil) {
 		record.Status, record.FallbackReason = ai.StatusFallbackUsed, final.FallbackReason
 	}
 	if err := worker.Store.SaveAIDecision(ctx, record); err != nil {
 		return err
 	}
-	if err := worker.Store.SetNotificationRouting(ctx, item.ID, final.Category, final.Priority, final.Summary); err != nil {
+	if err := worker.Store.SetNotificationAnalysis(ctx, item.ID, final.Category, final.Priority, final.Summary); err != nil {
 		return err
 	}
 	destinations := map[string]string{"email": person.Email, "telegram": person.TelegramChatID, "webhook": person.WebhookURL}
@@ -179,10 +208,27 @@ func (worker *Worker) deliver(ctx context.Context, job jobs.Job, deliveryID stri
 		return err
 	}
 	providerCtx, cancel := context.WithTimeout(ctx, worker.Config.ProviderTimeout)
+	subject, body := value.Notification.Subject, value.Notification.Body
+	messageTemplate, templateErr := worker.Store.MatchTemplate(
+		ctx, value.Notification, string(value.Delivery.Channel),
+	)
+	if templateErr != nil {
+		cancel()
+		return templateErr
+	}
+	if messageTemplate != nil {
+		subject, body = template.Render(*messageTemplate, value.Notification)
+	}
+	deliveryMetadata := make(map[string]any, len(value.Notification.Metadata)+2)
+	for key, metadataValue := range value.Notification.Metadata {
+		deliveryMetadata[key] = metadataValue
+	}
+	deliveryMetadata["priority"] = value.Notification.Priority
+	deliveryMetadata["category"] = value.Notification.Category
 	result, deliveryErr := provider.Deliver(providerCtx, delivery.Message{
 		DeliveryID: value.Delivery.ID, NotificationID: value.Notification.ID,
-		Destination: value.Delivery.Destination, Subject: value.Notification.Subject,
-		Body: value.Notification.Body, Metadata: value.Notification.Metadata,
+		Destination: value.Delivery.Destination, Subject: subject,
+		Body: body, Metadata: deliveryMetadata,
 	})
 	cancel()
 	if deliveryErr == nil {

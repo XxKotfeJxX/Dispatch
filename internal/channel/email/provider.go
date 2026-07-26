@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/smtp"
 	"strconv"
+	"strings"
 
 	"dispatch/internal/config"
 	"dispatch/internal/delivery"
@@ -29,8 +30,11 @@ func (p *Provider) Deliver(ctx context.Context, message delivery.Message) (deliv
 	if p.config.Username != "" {
 		auth = smtp.PlainAuth("", p.config.Username, p.config.Password, p.config.Host)
 	}
-	payload := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-		p.config.From, message.Destination, message.Subject, message.Body))
+	payload := []byte(fmt.Sprintf(
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nX-Dispatch-Notification-ID: %s\r\nX-Tags: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
+		headerValue(p.config.From), headerValue(message.Destination), headerValue(message.Subject),
+		headerValue(message.NotificationID), strings.Join(messageTags(message), ", "), message.Body,
+	))
 	result := make(chan error, 1)
 	go func() {
 		if !p.config.TLS {
@@ -81,4 +85,34 @@ func (p *Provider) Deliver(ctx context.Context, message delivery.Message) (deliv
 		}
 		return delivery.ProviderResult{ResponseCode: 250}, nil
 	}
+}
+
+func messageTags(message delivery.Message) []string {
+	tags := []string{"Dispatch"}
+	add := func(prefix string, value any) {
+		rendered := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+		rendered = strings.Map(func(character rune) rune {
+			if (character >= 'a' && character <= 'z') ||
+				(character >= '0' && character <= '9') || character == '-' || character == '_' {
+				return character
+			}
+			return '-'
+		}, rendered)
+		rendered = strings.Trim(rendered, "-")
+		if rendered != "" && rendered != "<nil>" {
+			tags = append(tags, prefix+rendered)
+		}
+	}
+	platform := message.Metadata["connector"]
+	if platform == nil || strings.TrimSpace(fmt.Sprint(platform)) == "" {
+		platform = message.Metadata["provider"]
+	}
+	add("platform-", platform)
+	add("priority-", message.Metadata["priority"])
+	add("category-", message.Metadata["category"])
+	return tags
+}
+
+func headerValue(value string) string {
+	return strings.NewReplacer("\r", " ", "\n", " ").Replace(value)
 }

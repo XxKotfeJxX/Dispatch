@@ -1,4 +1,4 @@
-.PHONY: test test-race test-ai lint compose-up compose-down
+.PHONY: test test-race test-ai lint compose-up compose-up-discord compose-down
 
 test:
 	go test ./...
@@ -17,6 +17,9 @@ lint:
 	pnpm --dir web typecheck
 
 compose-up:
+	docker compose up --build
+
+compose-up-discord:
 	docker compose up --build
 
 compose-down:
