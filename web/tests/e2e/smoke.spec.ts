@@ -66,3 +66,33 @@ test('integrations catalog uses branded one-click cards and separates developer 
  await page.getByRole('button',{name:'New source'}).click()
  await expect(page.getByRole('button',{name:'Create source'})).toBeVisible()
 })
+
+test('template editor exposes guided variables, preview and conditions', async ({page})=>{
+ let created: Record<string, unknown> | undefined
+ await page.route('**/api/v1/templates', async route=>{
+  if(route.request().method()==='POST'){
+   created=route.request().postDataJSON()
+   await route.fulfill({status:201,json:{data:{id:'tpl_test',...created}}})
+   return
+  }
+  await route.fulfill({json:{data:[]}})
+ })
+ await page.goto('/templates')
+ await expect(page.getByRole('heading',{name:'Templates',exact:true})).toBeVisible()
+ await page.getByRole('button',{name:'New template'}).click()
+ await page.getByPlaceholder('For example: Important GitHub activity').fill('GitHub review')
+ await page.getByLabel('Apply to service').selectOption('github')
+ const message=page.getByLabel('Notification message')
+ await message.focus()
+ await page.getByRole('button',{name:'Repository'}).click()
+ await expect(message).toHaveValue(/{{repository}}/)
+ await page.getByRole('button',{name:'Add condition'}).click()
+ await page.getByPlaceholder('Value to match').fill('octocat')
+ await page.getByRole('button',{name:'Create template'}).click()
+ expect(created).toMatchObject({
+  name:'GitHub review',
+  service:'github',
+  conditions:[{field:'sender',operator:'contains',value:'octocat'}],
+ })
+ await expect(page.getByRole('button',{name:'New template'})).toBeVisible()
+})

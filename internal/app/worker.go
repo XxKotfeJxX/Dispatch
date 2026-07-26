@@ -17,6 +17,7 @@ import (
 	"dispatch/internal/notification"
 	"dispatch/internal/routing"
 	"dispatch/internal/store/postgres"
+	"dispatch/internal/template"
 )
 
 type Worker struct {
@@ -200,10 +201,21 @@ func (worker *Worker) deliver(ctx context.Context, job jobs.Job, deliveryID stri
 		return err
 	}
 	providerCtx, cancel := context.WithTimeout(ctx, worker.Config.ProviderTimeout)
+	subject, body := value.Notification.Subject, value.Notification.Body
+	messageTemplate, templateErr := worker.Store.MatchTemplate(
+		ctx, value.Notification, string(value.Delivery.Channel),
+	)
+	if templateErr != nil {
+		cancel()
+		return templateErr
+	}
+	if messageTemplate != nil {
+		subject, body = template.Render(*messageTemplate, value.Notification)
+	}
 	result, deliveryErr := provider.Deliver(providerCtx, delivery.Message{
 		DeliveryID: value.Delivery.ID, NotificationID: value.Notification.ID,
-		Destination: value.Delivery.Destination, Subject: value.Notification.Subject,
-		Body: value.Notification.Body, Metadata: value.Notification.Metadata,
+		Destination: value.Delivery.Destination, Subject: subject,
+		Body: body, Metadata: value.Notification.Metadata,
 	})
 	cancel()
 	if deliveryErr == nil {

@@ -263,11 +263,18 @@ func (api *API) createTemplate(writer http.ResponseWriter, request *http.Request
 	if !decode(writer, request, &item) {
 		return
 	}
-	if item.Name == "" || item.BodyTemplate == "" || !validChannels([]string{item.Channel}) {
-		writeError(writer, 400, "validation_error", "valid name, channel and body_template are required")
+	normalizeTemplate(&item)
+	item.Enabled = true
+	if err := template.Validate(item); err != nil {
+		writeError(writer, 400, "validation_error", err.Error())
 		return
 	}
 	if err := api.Store.CreateTemplate(request.Context(), &item); err != nil {
+		if errors.Is(err, postgres.ErrConflict) {
+			writeError(writer, 409, "fallback_exists",
+				"this service already has a fallback template; add a condition or edit the existing fallback")
+			return
+		}
 		api.storeError(writer, err)
 		return
 	}
@@ -279,7 +286,17 @@ func (api *API) updateTemplate(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	item.ID = chi.URLParam(request, "id")
+	normalizeTemplate(&item)
+	if err := template.Validate(item); err != nil {
+		writeError(writer, 400, "validation_error", err.Error())
+		return
+	}
 	if err := api.Store.UpdateTemplate(request.Context(), item); err != nil {
+		if errors.Is(err, postgres.ErrConflict) {
+			writeError(writer, 409, "fallback_exists",
+				"this service already has a fallback template; add a condition or edit the existing fallback")
+			return
+		}
 		api.storeError(writer, err)
 		return
 	}
@@ -292,6 +309,24 @@ func (api *API) deleteTemplate(writer http.ResponseWriter, request *http.Request
 	}
 	writer.WriteHeader(204)
 }
+
+func normalizeTemplate(item *template.Template) {
+	item.Name = strings.TrimSpace(item.Name)
+	item.Service = strings.ToLower(strings.TrimSpace(item.Service))
+	item.Channel = strings.ToLower(strings.TrimSpace(item.Channel))
+	if item.Service == "" {
+		item.Service = template.ServiceAny
+	}
+	if item.Channel == "" {
+		item.Channel = template.ChannelAll
+	}
+	for index := range item.Conditions {
+		item.Conditions[index].Field = strings.ToLower(strings.TrimSpace(item.Conditions[index].Field))
+		item.Conditions[index].Operator = strings.ToLower(strings.TrimSpace(item.Conditions[index].Operator))
+		item.Conditions[index].Value = strings.TrimSpace(item.Conditions[index].Value)
+	}
+}
+
 func (api *API) listRules(writer http.ResponseWriter, request *http.Request) {
 	items, err := api.Store.ListRules(request.Context())
 	if err != nil {
