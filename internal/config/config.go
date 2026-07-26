@@ -23,6 +23,8 @@ type Config struct {
 	ProviderTimeout    time.Duration
 	AI                 AIConfig
 	SMTP               SMTPConfig
+	MailpitSMTP        SMTPConfig
+	MailpitPublicURL   string
 	Telegram           TelegramConfig
 	Webhook            WebhookConfig
 	Ingress            IngressConfig
@@ -118,6 +120,11 @@ func Load() (Config, error) {
 			Username: os.Getenv("SMTP_USERNAME"), Password: os.Getenv("SMTP_PASSWORD"),
 			From: env("SMTP_FROM", "dispatch@localhost"), TLS: envBool("SMTP_TLS", false),
 		},
+		MailpitSMTP: SMTPConfig{
+			Host: env("MAILPIT_SMTP_HOST", "mailpit"), Port: envInt("MAILPIT_SMTP_PORT", 1025),
+			From: env("MAILPIT_SMTP_FROM", "dispatch@localhost"),
+		},
+		MailpitPublicURL: strings.TrimRight(env("MAILPIT_PUBLIC_URL", "http://localhost:8025"), "/"),
 		Telegram: TelegramConfig{
 			Token:   strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN")),
 			APIBase: env("TELEGRAM_API_BASE", "https://api.telegram.org"),

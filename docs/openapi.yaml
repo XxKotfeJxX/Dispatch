@@ -345,6 +345,24 @@ paths:
       summary: Delete recipient
       parameters: [{$ref: "#/components/parameters/ID"}]
       responses: {"204": {description: Deleted}}
+  /api/v1/recipient-setups/mailpit:
+    post:
+      summary: Start a Mailpit mailbox verification
+      responses: {"201": {description: Verification message sent}, "409": {$ref: "#/components/responses/Error"}}
+  /api/v1/recipient-setups/mailpit/{id}/verify:
+    post:
+      summary: Verify a Mailpit code and create the recipient
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses: {"201": {description: Recipient created}, "409": {$ref: "#/components/responses/Error"}}
+  /api/v1/recipient-setups/telegram:
+    post:
+      summary: Start Telegram bot deep-link pairing
+      responses: {"201": {description: Pairing link created}, "409": {$ref: "#/components/responses/Error"}}
+  /api/v1/recipient-setups/{id}:
+    get:
+      summary: Read recipient setup status
+      parameters: [{$ref: "#/components/parameters/ID"}]
+      responses: {"200": {description: Setup status}, "404": {$ref: "#/components/responses/Error"}}
   /api/v1/templates:
     get: {summary: List templates, responses: {"200": {description: Templates}}}
     post: {summary: Create template, responses: {"201": {description: Created}}}
@@ -515,10 +533,12 @@ components:
         offset: {type: integer}
     Recipient:
       type: object
-      required: [name, preferences]
+      required: [name, destination_type, preferences]
       properties:
         id: {type: string, readOnly: true}
         name: {type: string}
+        destination_type: {type: string, enum: [email, telegram, mailpit, webhook]}
+        destination_label: {type: string}
         email: {type: string, format: email}
         telegram_chat_id: {type: string}
         webhook_url: {type: string, format: uri}

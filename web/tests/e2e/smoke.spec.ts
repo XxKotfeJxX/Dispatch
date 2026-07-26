@@ -96,3 +96,45 @@ test('template editor exposes guided variables, preview and conditions', async (
  })
  await expect(page.getByRole('button',{name:'New template'})).toBeVisible()
 })
+
+test('recipient setup guides email, Telegram, Mailpit and webhook destinations', async ({page})=>{
+ let created: Record<string, unknown> | undefined
+ await page.route('**/api/v1/recipients', async route=>{
+  if(route.request().method()==='POST'){
+   created=route.request().postDataJSON()
+   await route.fulfill({status:201,json:{data:{id:'rec_test',...created}}})
+   return
+  }
+  await route.fulfill({json:{data:[]}})
+ })
+ await page.route('**/api/v1/recipient-setups/mailpit', route=>route.fulfill({status:201,json:{
+  data:{id:'rst_mailpit',kind:'mailpit',name:'Local inbox',target:'alex@dispatch.local',
+   status:'pending',expires_at:'2026-07-26T20:00:00Z'},
+  mailpit_url:'http://localhost:8025',
+ }}))
+ await page.goto('/recipients')
+ await page.getByRole('button',{name:'Add destination'}).click()
+ const destination=page.getByLabel('Where should notifications arrive?')
+ await expect(destination.getByRole('option',{name:'Email / Gmail'})).toBeAttached()
+ await expect(destination.getByRole('option',{name:'Telegram'})).toBeAttached()
+ await expect(destination.getByRole('option',{name:'Dispatch Mailpit'})).toBeAttached()
+ await expect(destination.getByRole('option',{name:'Other service'})).toBeAttached()
+ await page.getByLabel('Destination name').fill('Primary email')
+ await page.getByLabel('Email address').fill('alex@example.com')
+ await page.getByRole('button',{name:'Add destination',exact:true}).click()
+ expect(created).toMatchObject({
+  name:'Primary email',destination_type:'email',email:'alex@example.com',
+  preferences:{default_channels:['email']},
+ })
+ await page.getByRole('button',{name:'Add destination'}).click()
+ await page.getByLabel('Destination name').fill('Telegram alerts')
+ await destination.selectOption('telegram')
+ await expect(page.getByText(/phone number and username are not requested/i)).toBeVisible()
+ await expect(page.getByRole('button',{name:'Connect Telegram'})).toBeVisible()
+ await destination.selectOption('mailpit')
+ await page.getByLabel('Destination name').fill('Local inbox')
+ await page.getByLabel('Mailpit mailbox name').fill('alex')
+ await page.getByRole('button',{name:'Send verification code'}).click()
+ await expect(page.getByLabel('Mailpit verification code')).toBeVisible()
+ await expect(page.getByRole('link',{name:/Open Mailpit/})).toBeVisible()
+})

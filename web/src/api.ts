@@ -32,5 +32,6 @@ export type Notification = {
 }
 export type Recipient = {
   id: string; name: string; email?: string; telegram_chat_id?: string; webhook_url?: string
+  destination_type: 'email'|'telegram'|'mailpit'|'webhook'; destination_label?: string
   preferences: { default_channels: string[]; disabled_channels?: string[]; time_zone?: string }
 }

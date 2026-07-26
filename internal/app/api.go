@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/mail"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,6 +72,10 @@ func (api *API) Handler() http.Handler {
 			routes.Get("/recipients/{id}", api.getRecipient)
 			routes.Put("/recipients/{id}", api.updateRecipient)
 			routes.Delete("/recipients/{id}", api.deleteRecipient)
+			routes.Post("/recipient-setups/mailpit", api.startMailpitRecipientSetup)
+			routes.Post("/recipient-setups/mailpit/{id}/verify", api.verifyMailpitRecipientSetup)
+			routes.Post("/recipient-setups/telegram", api.startTelegramRecipientSetup)
+			routes.Get("/recipient-setups/{id}", api.getRecipientSetup)
 			routes.Get("/templates", api.listTemplates)
 			routes.Post("/templates", api.createTemplate)
 			routes.Put("/templates/{id}", api.updateTemplate)
@@ -214,10 +220,12 @@ func (api *API) getRecipient(writer http.ResponseWriter, request *http.Request) 
 }
 func (api *API) createRecipient(writer http.ResponseWriter, request *http.Request) {
 	var item recipient.Recipient
-	if !decode(writer, request, &item) || !validateRecipient(item) {
-		if item.Name == "" {
-			writeError(writer, 400, "validation_error", "name and at least one destination are required")
-		}
+	if !decode(writer, request, &item) {
+		return
+	}
+	normalizeRecipient(&item)
+	if err := validateRecipient(item); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	if err := api.Store.CreateRecipient(request.Context(), &item); err != nil {
@@ -232,8 +240,9 @@ func (api *API) updateRecipient(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	item.ID = chi.URLParam(request, "id")
-	if !validateRecipient(item) {
-		writeError(writer, 400, "validation_error", "name and at least one destination are required")
+	normalizeRecipient(&item)
+	if err := validateRecipient(item); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	if err := api.Store.UpdateRecipient(request.Context(), item); err != nil {
@@ -598,6 +607,84 @@ func validChannels(channels []string) bool {
 	}
 	return true
 }
-func validateRecipient(item recipient.Recipient) bool {
-	return item.Name != "" && (item.Email != "" || item.TelegramChatID != "" || item.WebhookURL != "") && validChannels(item.Preferences.DefaultChannels) && validChannels(item.Preferences.DisabledChannels)
+func normalizeRecipient(item *recipient.Recipient) {
+	item.Name = strings.TrimSpace(item.Name)
+	item.DestinationType = strings.ToLower(strings.TrimSpace(item.DestinationType))
+	item.DestinationLabel = strings.TrimSpace(item.DestinationLabel)
+	item.Email = strings.ToLower(strings.TrimSpace(item.Email))
+	item.TelegramChatID = strings.TrimSpace(item.TelegramChatID)
+	item.WebhookURL = strings.TrimSpace(item.WebhookURL)
+	if item.DestinationType == "" {
+		switch {
+		case item.TelegramChatID != "":
+			item.DestinationType = "telegram"
+		case item.WebhookURL != "":
+			item.DestinationType = "webhook"
+		default:
+			item.DestinationType = "email"
+		}
+	}
+	if item.DestinationLabel == "" {
+		switch item.DestinationType {
+		case "email", "mailpit":
+			item.DestinationLabel = item.Email
+		case "telegram":
+			item.DestinationLabel = "Telegram"
+		case "webhook":
+			item.DestinationLabel = "Webhook"
+		}
+	}
+}
+
+func validateRecipient(item recipient.Recipient) error {
+	if item.Name == "" {
+		return fmt.Errorf("recipient name is required")
+	}
+	if !validChannels(item.Preferences.DefaultChannels) ||
+		!validChannels(item.Preferences.DisabledChannels) {
+		return fmt.Errorf("unsupported delivery channel")
+	}
+	if len(item.Preferences.DefaultChannels) == 0 {
+		return fmt.Errorf("select a delivery channel")
+	}
+	hasDefaultChannel := func(expected string) bool {
+		for _, channel := range item.Preferences.DefaultChannels {
+			if channel == expected {
+				return true
+			}
+		}
+		return false
+	}
+	switch item.DestinationType {
+	case "email", "mailpit":
+		address, err := mail.ParseAddress(item.Email)
+		if err != nil || address.Address != item.Email {
+			return fmt.Errorf("enter a valid email address")
+		}
+		if !hasDefaultChannel("email") {
+			return fmt.Errorf("email destination must use the email channel")
+		}
+	case "telegram":
+		if item.TelegramChatID == "" {
+			return fmt.Errorf("connect Telegram through the Dispatch bot")
+		}
+		if !hasDefaultChannel("telegram") {
+			return fmt.Errorf("Telegram destination must use the Telegram channel")
+		}
+	case "webhook":
+		target, err := url.ParseRequestURI(item.WebhookURL)
+		if err != nil || (target.Scheme != "http" && target.Scheme != "https") ||
+			target.Host == "" || target.User != nil {
+			return fmt.Errorf("enter a valid HTTP or HTTPS webhook URL")
+		}
+		if item.DestinationLabel == "" {
+			return fmt.Errorf("service name is required")
+		}
+		if !hasDefaultChannel("webhook") {
+			return fmt.Errorf("webhook destination must use the webhook channel")
+		}
+	default:
+		return fmt.Errorf("unsupported destination type")
+	}
+	return nil
 }

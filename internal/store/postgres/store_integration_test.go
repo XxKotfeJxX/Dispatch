@@ -67,6 +67,37 @@ func TestNotificationIdempotencyAndJobClaim(t *testing.T) {
 	}
 }
 
+func TestMailpitRecipientSetupCompletion(t *testing.T) {
+	store := integrationStore(t)
+	ctx := context.Background()
+	suffix := uuid.NewString()
+	codeHash := []byte("code-" + suffix)
+	setup := recipient.Setup{
+		ID: "rst_" + suffix, Kind: "mailpit", Name: "Local inbox",
+		Target: "test-" + suffix + "@dispatch.local", CodeHash: codeHash,
+		ExpiresAt: time.Now().UTC().Add(time.Minute),
+	}
+	if err := store.CreateRecipientSetup(ctx, &setup); err != nil {
+		t.Fatal(err)
+	}
+	person, err := store.CompleteMailpitRecipientSetup(ctx, setup.ID, codeHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if person.DestinationType != "mailpit" || person.Email != setup.Target ||
+		len(person.Preferences.DefaultChannels) != 1 ||
+		person.Preferences.DefaultChannels[0] != "email" {
+		t.Fatalf("recipient = %#v", person)
+	}
+	completed, err := store.GetRecipientSetup(ctx, setup.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.Status != "completed" || completed.RecipientID != person.ID {
+		t.Fatalf("setup = %#v", completed)
+	}
+}
+
 func TestRecoverStaleJob(t *testing.T) {
 	store := integrationStore(t)
 	ctx := context.Background()

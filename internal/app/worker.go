@@ -38,6 +38,13 @@ func (worker *Worker) Run(ctx context.Context) error {
 	}
 	worker.Logger.Info("worker started", "id", worker.Config.WorkerID, "concurrency", worker.Config.WorkerConcurrency, "recovered_jobs", recovered)
 	var group sync.WaitGroup
+	if worker.Config.Telegram.Token != "" {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			worker.telegramDeliveryPairingLoop(ctx)
+		}()
+	}
 	if worker.Config.Connectors.TelegramAPIID > 0 &&
 		worker.Config.Connectors.TelegramAPIHash != "" {
 		group.Add(1)

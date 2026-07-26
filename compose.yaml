@@ -32,6 +32,9 @@ services:
       API_KEY: ${API_KEY:-dispatch-local-development-key}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8090}
       DEMO_SEED: ${DEMO_SEED:-true}
+      MAILPIT_SMTP_HOST: ${MAILPIT_SMTP_HOST:-mailpit}
+      MAILPIT_SMTP_PORT: ${MAILPIT_SMTP_PORT:-1025}
+      MAILPIT_PUBLIC_URL: ${MAILPIT_PUBLIC_URL:-http://localhost:8025}
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,8 +59,8 @@ services:
       DATABASE_URL: postgres://dispatch:dispatch@postgres:5432/dispatch?sslmode=disable
       WORKER_ID: dispatch-worker-compose
       AI_ENABLED: ${AI_ENABLED:-false}
-      SMTP_HOST: mailpit
-      SMTP_PORT: 1025
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       WEBHOOK_ALLOW_PRIVATE: ${WEBHOOK_ALLOW_PRIVATE:-false}
     depends_on:
       postgres:
