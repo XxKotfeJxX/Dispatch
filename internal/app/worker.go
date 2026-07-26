@@ -219,10 +219,16 @@ func (worker *Worker) deliver(ctx context.Context, job jobs.Job, deliveryID stri
 	if messageTemplate != nil {
 		subject, body = template.Render(*messageTemplate, value.Notification)
 	}
+	deliveryMetadata := make(map[string]any, len(value.Notification.Metadata)+2)
+	for key, metadataValue := range value.Notification.Metadata {
+		deliveryMetadata[key] = metadataValue
+	}
+	deliveryMetadata["priority"] = value.Notification.Priority
+	deliveryMetadata["category"] = value.Notification.Category
 	result, deliveryErr := provider.Deliver(providerCtx, delivery.Message{
 		DeliveryID: value.Delivery.ID, NotificationID: value.Notification.ID,
 		Destination: value.Delivery.Destination, Subject: subject,
-		Body: body, Metadata: value.Notification.Metadata,
+		Body: body, Metadata: deliveryMetadata,
 	})
 	cancel()
 	if deliveryErr == nil {

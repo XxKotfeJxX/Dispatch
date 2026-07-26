@@ -128,10 +128,24 @@ services:
       - ${DISPATCH_DNS_SECONDARY:-8.8.8.8}
 
   mailpit:
-    image: axllent/mailpit:v1.27
+    image: ${DISPATCH_INBOX_IMAGE:-ghcr.io/xxkotfejxx/dispatch-inbox:preview}
     ports:
       - "8025:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: ${MAILPIT_MAX_MESSAGES:-0}
+      MP_MAX_AGE: ${MAILPIT_MAX_AGE:-}
+      MP_LABEL: Dispatch Inbox storage
+      MP_HIDE_DELETE_ALL_BUTTON: "true"
+      MP_BLOCK_REMOTE_CSS_AND_FONTS: "true"
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_UI_AUTH_FILE: /data/auth
+      MP_UI_REGISTRATION: ${MAILPIT_ALLOW_REGISTRATION:-true}
+    volumes:
+      - dispatch-mailpit:/data
+      - ${MAILPIT_AUTH_FILE:-./.local/inbox-auth}:/data/auth
     restart: unless-stopped
 
 volumes:
   dispatch-postgres:
+  dispatch-mailpit:
