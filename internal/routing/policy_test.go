@@ -22,8 +22,8 @@ func TestDecideUsesRecipientChannelsAndAIOnlyForAnalysis(t *testing.T) {
 			},
 		},
 		AI: &ai.Decision{
-			Category: "billing", Priority: "high", Summary: "Invoice is ready",
-			Confidence: .99,
+			Category: "finance", Priority: "high", Summary: "Invoice is ready",
+			Confidence: .99, ReasonCodes: []string{"action_required"},
 		},
 		AIConfigured: true,
 		Now:          time.Now().UTC(),
@@ -32,7 +32,7 @@ func TestDecideUsesRecipientChannelsAndAIOnlyForAnalysis(t *testing.T) {
 	if len(result.Channels) != 1 || result.Channels[0] != "email" {
 		t.Fatalf("recipient destination must be definitive: %#v", result)
 	}
-	if !result.UsedAI || result.Category != "billing" || result.Priority != "high" {
+	if !result.UsedAI || result.Category != "finance" || result.Priority != "high" {
 		t.Fatalf("AI analysis was not applied: %#v", result)
 	}
 }
@@ -47,7 +47,8 @@ func TestDecideFallsBackFromLowConfidenceWithoutChangingDestination(t *testing.T
 			},
 		},
 		AI: &ai.Decision{
-			Category: "ops", Priority: "critical", Summary: "AI", Confidence: .2,
+			Category: "system", Priority: "critical", Summary: "AI", Confidence: .2,
+			ReasonCodes: []string{"service_disruption"},
 		},
 		AIConfigured: true,
 		Now:          time.Now().UTC(),

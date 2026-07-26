@@ -152,12 +152,15 @@ func (worker *Worker) processNotification(ctx context.Context, notificationID st
 		cancel()
 		record.Provider, record.Model, record.RawResponse = worker.AI.Name(), worker.AI.Model(), raw
 		record.DurationMS = time.Since(started).Milliseconds()
-		if aiErr == nil && ai.ValidateDecision(value) {
+		value = ai.NormalizeDecision(value)
+		if aiErr == nil && ai.ValidateDecisionWithSummaryLimit(value, worker.Config.AI.SummaryMaxChars) {
 			decision, record.Decision, record.Status = &value, value, ai.StatusCompleted
 		} else {
-			record.Status, record.FallbackReason = ai.StatusFallbackUsed, "provider_or_validation_error"
-			if errors.Is(aiErr, context.DeadlineExceeded) {
-				record.FallbackReason = "timeout"
+			record.Status = ai.StatusFallbackUsed
+			if aiErr != nil {
+				record.FallbackReason = ai.FallbackReason(aiErr)
+			} else {
+				record.FallbackReason = "invalid_output"
 			}
 		}
 	} else {
@@ -173,7 +176,8 @@ func (worker *Worker) processNotification(ctx context.Context, notificationID st
 		_ = worker.Store.TransitionNotification(ctx, item.ID, notification.StatusFailed)
 		return nil
 	}
-	if final.FallbackReason != "" && !final.UsedAI {
+	if final.FallbackReason != "" && !final.UsedAI &&
+		(record.FallbackReason == "" || decision != nil) {
 		record.Status, record.FallbackReason = ai.StatusFallbackUsed, final.FallbackReason
 	}
 	if err := worker.Store.SaveAIDecision(ctx, record); err != nil {

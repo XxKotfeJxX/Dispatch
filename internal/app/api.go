@@ -343,9 +343,19 @@ func (api *API) dashboard(writer http.ResponseWriter, request *http.Request) {
 }
 func (api *API) settings(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, 200, map[string]any{"data": map[string]any{
-		"version":  buildinfo.Version,
-		"auth":     map[string]bool{"enabled": api.Config.ConsoleAuthEnabled},
-		"ai":       map[string]any{"enabled": api.Config.AI.Enabled, "model": api.Config.AI.Model, "prompt_version": api.Config.AI.PromptVersion},
+		"version": buildinfo.Version,
+		"auth":    map[string]bool{"enabled": api.Config.ConsoleAuthEnabled},
+		"ai": map[string]any{
+			"enabled":           api.Config.AI.Enabled,
+			"model":             api.Config.AI.Model,
+			"prompt_version":    api.Config.AI.PromptVersion,
+			"min_confidence":    api.Config.AI.MinConfidence,
+			"timeout":           api.Config.AI.Timeout.String(),
+			"max_input_chars":   api.Config.AI.MaxInputChars,
+			"summary_max_chars": api.Config.AI.SummaryMaxChars,
+			"thinking_level":    api.Config.AI.ThinkingLevel,
+			"categories":        ai.Categories,
+		},
 		"channels": map[string]bool{"email": api.Config.SMTP.Host != "", "telegram": api.Config.Telegram.Token != "", "webhook": api.Config.Webhook.Enabled},
 		"connectors": map[string]bool{
 			"public_https": strings.HasPrefix(
@@ -375,6 +385,7 @@ func (api *API) aiPreview(writer http.ResponseWriter, request *http.Request) {
 	if !decode(writer, request, &input) {
 		return
 	}
+	input.Metadata = ai.RedactMetadata(input.Metadata)
 	ctx, cancel := context.WithTimeout(request.Context(), api.Config.AI.Timeout)
 	defer cancel()
 	decision, _, err := api.AI.Decide(ctx, input)
@@ -382,7 +393,7 @@ func (api *API) aiPreview(writer http.ResponseWriter, request *http.Request) {
 		writeError(writer, 502, "ai_provider_error", "AI preview failed")
 		return
 	}
-	writeJSON(writer, 200, map[string]any{"data": decision})
+	writeJSON(writer, 200, map[string]any{"data": ai.NormalizeDecision(decision)})
 }
 
 func (api *API) events(writer http.ResponseWriter, request *http.Request) {

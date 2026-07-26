@@ -38,7 +38,10 @@ type AIConfig struct {
 	Model           string
 	Timeout         time.Duration
 	MinConfidence   float64
+	MaxInputChars   int
 	MaxOutputTokens int
+	SummaryMaxChars int
+	ThinkingLevel   string
 	PromptVersion   string
 }
 
@@ -110,10 +113,13 @@ func Load() (Config, error) {
 			Enabled:         envBool("AI_ENABLED", false),
 			APIKey:          strings.TrimSpace(os.Getenv("GEMINI_API_KEY")),
 			Model:           env("GEMINI_MODEL", "gemini-3.5-flash-lite"),
-			Timeout:         envDuration("AI_TIMEOUT", 5*time.Second),
+			Timeout:         envDuration("AI_TIMEOUT", 12*time.Second),
 			MinConfidence:   envFloat("AI_MIN_CONFIDENCE", 0.75),
+			MaxInputChars:   envInt("AI_MAX_INPUT_CHARS", 12000),
 			MaxOutputTokens: envInt("AI_MAX_OUTPUT_TOKENS", 512),
-			PromptVersion:   env("AI_PROMPT_VERSION", "dispatch-analysis-v2"),
+			SummaryMaxChars: envInt("AI_SUMMARY_MAX_CHARS", 180),
+			ThinkingLevel:   strings.ToLower(env("AI_THINKING_LEVEL", "minimal")),
+			PromptVersion:   env("AI_PROMPT_VERSION", "dispatch-analysis-v3"),
 		},
 		SMTP: SMTPConfig{
 			Host: env("SMTP_HOST", "localhost"), Port: envInt("SMTP_PORT", 1025),
@@ -173,6 +179,22 @@ func Load() (Config, error) {
 	}
 	if config.AI.Enabled && config.AI.APIKey == "" {
 		return Config{}, fmt.Errorf("GEMINI_API_KEY is required when AI_ENABLED=true")
+	}
+	if config.AI.MinConfidence < 0 || config.AI.MinConfidence > 1 {
+		return Config{}, fmt.Errorf("AI_MIN_CONFIDENCE must be between 0 and 1")
+	}
+	if config.AI.MaxInputChars < 1000 || config.AI.MaxInputChars > 100000 {
+		return Config{}, fmt.Errorf("AI_MAX_INPUT_CHARS must be between 1000 and 100000")
+	}
+	if config.AI.MaxOutputTokens < 128 || config.AI.MaxOutputTokens > 4096 {
+		return Config{}, fmt.Errorf("AI_MAX_OUTPUT_TOKENS must be between 128 and 4096")
+	}
+	if config.AI.SummaryMaxChars < 80 || config.AI.SummaryMaxChars > 500 {
+		return Config{}, fmt.Errorf("AI_SUMMARY_MAX_CHARS must be between 80 and 500")
+	}
+	if config.AI.ThinkingLevel != "minimal" && config.AI.ThinkingLevel != "low" &&
+		config.AI.ThinkingLevel != "medium" && config.AI.ThinkingLevel != "high" {
+		return Config{}, fmt.Errorf("AI_THINKING_LEVEL must be minimal, low, medium, or high")
 	}
 	if config.WorkerConcurrency < 1 || config.WorkerConcurrency > 64 {
 		return Config{}, fmt.Errorf("WORKER_CONCURRENCY must be between 1 and 64")

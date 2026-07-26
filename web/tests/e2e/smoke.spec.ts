@@ -174,3 +174,32 @@ test('notifications search keeps icon clearance and has no manual composer', asy
  await expect(search).toHaveCSS('padding-left','40px')
  await expect(page.getByRole('button',{name:'Compose'})).toHaveCount(0)
 })
+
+test('settings explain and preview the AI analysis profile', async ({page})=>{
+ await page.route('**/api/v1/settings', route=>route.fulfill({json:{data:{
+  version:'dev',auth:{enabled:false},channels:{email:true,telegram:true,webhook:true},
+  worker_concurrency:4,
+  ai:{enabled:true,model:'gemini-3.5-flash-lite',prompt_version:'dispatch-analysis-v3',
+   min_confidence:.75,timeout:'5s',max_input_chars:12000,summary_max_chars:180,
+   thinking_level:'minimal',
+   categories:['security','finance','development','communication','calendar','tasks','files','account','system','content','general']},
+ }}}))
+ await page.route('**/api/v1/ai/preview', async route=>{
+  expect(route.request().postDataJSON()).toMatchObject({
+   event_type:'telegram.message',subject:'Server update',
+   body:'The deployment completed successfully.',
+  })
+  await route.fulfill({json:{data:{
+   category:'system',priority:'low',summary:'The deployment completed successfully.',
+   confidence:.96,reason_codes:['routine_update','status_change'],
+  }}})
+ })
+ await page.goto('/settings')
+ await expect(page.getByRole('heading',{name:'AI analysis'})).toBeVisible()
+ await expect(page.getByText('75%')).toBeVisible()
+ await page.getByLabel('AI test title').fill('Server update')
+ await page.getByLabel('AI test message').fill('The deployment completed successfully.')
+ await page.getByRole('button',{name:'Analyze sample'}).click()
+ await expect(page.getByText('96% confidence')).toBeVisible()
+ await expect(page.getByRole('paragraph').filter({hasText:'The deployment completed successfully.'})).toBeVisible()
+})
