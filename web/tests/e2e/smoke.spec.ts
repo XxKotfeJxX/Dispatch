@@ -138,3 +138,17 @@ test('recipient setup guides email, Telegram, Mailpit and webhook destinations',
  await expect(page.getByLabel('Mailpit verification code')).toBeVisible()
  await expect(page.getByRole('link',{name:/Open Mailpit/})).toBeVisible()
 })
+
+test('notifications search keeps icon clearance and has no manual composer', async ({page})=>{
+ await page.route('**/api/v1/notifications?limit=100', route=>route.fulfill({json:{
+  data:[{id:'not_test',idempotency_key:'test',recipient_id:'rec_test',
+   event_type:'telegram.message',subject:'Telegram message',body:'Hello',
+   priority:'normal',status:'delivered',requested_channels:[],created_at:'2026-07-26T19:00:00Z'}],
+  total:1,
+ }}))
+ await page.goto('/notifications')
+ const search=page.getByPlaceholder('Search notifications…')
+ await expect(search).toBeVisible()
+ await expect(search).toHaveCSS('padding-left','40px')
+ await expect(page.getByRole('button',{name:'Compose'})).toHaveCount(0)
+})
