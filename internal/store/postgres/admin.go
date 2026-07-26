@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	"dispatch/internal/notification"
-	"dispatch/internal/routing"
 	"dispatch/internal/template"
 )
 
@@ -117,81 +116,6 @@ func (store *Store) MatchTemplate(
 	return template.Select(items, item, channel), nil
 }
 
-func (store *Store) CreateRule(ctx context.Context, item *routing.Rule) error {
-	if item.ID == "" {
-		item.ID = "rul_" + uuid.NewString()
-	}
-	now := time.Now().UTC()
-	item.CreatedAt, item.UpdatedAt = now, now
-	condition, err := json.Marshal(item.Condition)
-	if err != nil {
-		return err
-	}
-	action, err := json.Marshal(item.Action)
-	if err != nil {
-		return err
-	}
-	_, err = store.pool.Exec(ctx, `
-		INSERT INTO routing_rules(id,name,priority,condition_json,action_json,enabled,created_at,updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
-		item.ID, item.Name, item.Priority, condition, action, item.Enabled, now)
-	return err
-}
-
-func (store *Store) ListRules(ctx context.Context) ([]routing.Rule, error) {
-	rows, err := store.pool.Query(ctx, `
-		SELECT id,name,priority,condition_json,action_json,enabled,created_at,updated_at
-		FROM routing_rules ORDER BY priority,id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make([]routing.Rule, 0)
-	for rows.Next() {
-		var item routing.Rule
-		var condition, action []byte
-		if err := rows.Scan(&item.ID, &item.Name, &item.Priority, &condition,
-			&action, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(condition, &item.Condition); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(action, &item.Action); err != nil {
-			return nil, err
-		}
-		result = append(result, item)
-	}
-	return result, rows.Err()
-}
-
-func (store *Store) UpdateRule(ctx context.Context, item routing.Rule) error {
-	condition, err := json.Marshal(item.Condition)
-	if err != nil {
-		return err
-	}
-	action, err := json.Marshal(item.Action)
-	if err != nil {
-		return err
-	}
-	command, err := store.pool.Exec(ctx, `
-		UPDATE routing_rules SET name=$2,priority=$3,condition_json=$4,action_json=$5,
-		    enabled=$6,updated_at=now() WHERE id=$1`,
-		item.ID, item.Name, item.Priority, condition, action, item.Enabled)
-	if err != nil {
-		return err
-	}
-	return requireChanged(command)
-}
-
-func (store *Store) DeleteRule(ctx context.Context, id string) error {
-	command, err := store.pool.Exec(ctx, `DELETE FROM routing_rules WHERE id=$1`, id)
-	if err != nil {
-		return err
-	}
-	return requireChanged(command)
-}
-
 type Dashboard struct {
 	Notifications24H int64            `json:"notifications_24h"`
 	Delivered        int64            `json:"delivered"`
@@ -286,10 +210,6 @@ func (store *Store) SeedDemo(ctx context.Context) error {
 		     '{"default_channels":["email"],"time_zone":"UTC"}'),
 		    ('rec_demo_finance','Finance','finance@example.test','','',
 		     '{"default_channels":["email"],"time_zone":"UTC"}');
-
-		INSERT INTO routing_rules(id,name,priority,condition_json,action_json,enabled)
-		VALUES ('rul_demo_payment','Critical payments',10,
-		        '{"event_type":"payment.failed"}','{"channels":["email","telegram"]}',true);
 
 		INSERT INTO templates(id,name,channel,subject_template,body_template)
 		VALUES ('tpl_demo_email','Default email','email','{{subject}}','{{body}}');

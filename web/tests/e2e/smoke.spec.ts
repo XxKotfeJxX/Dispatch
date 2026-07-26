@@ -4,6 +4,7 @@ test('console shell renders', async ({page})=>{
  await page.goto('/')
  await expect(page.getByRole('heading',{name:'Delivery overview'})).toBeVisible()
  await expect(page.getByText('Dispatch')).toBeVisible()
+ await expect(page.getByRole('link',{name:'Routing rules'})).toHaveCount(0)
 })
 
 test('integrations catalog uses branded one-click cards and separates developer tools', async ({page})=>{

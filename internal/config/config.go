@@ -113,7 +113,7 @@ func Load() (Config, error) {
 			Timeout:         envDuration("AI_TIMEOUT", 5*time.Second),
 			MinConfidence:   envFloat("AI_MIN_CONFIDENCE", 0.75),
 			MaxOutputTokens: envInt("AI_MAX_OUTPUT_TOKENS", 512),
-			PromptVersion:   env("AI_PROMPT_VERSION", "dispatch-routing-v1"),
+			PromptVersion:   env("AI_PROMPT_VERSION", "dispatch-analysis-v2"),
 		},
 		SMTP: SMTPConfig{
 			Host: env("SMTP_HOST", "localhost"), Port: envInt("SMTP_PORT", 1025),

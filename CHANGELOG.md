@@ -2,6 +2,22 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- Delivery destinations now come exclusively from the recipient selected by an integration; event payloads and AI can no longer override them.
+- Gemini is limited to category, priority, summary, confidence, and reason codes.
+- Universal ingress no longer asks users to enter delivery-channel names.
+
+### Fixed
+
+- Recovered notification jobs can safely resume after the notification has already reached the queued state.
+
+### Removed
+
+- Routing rules console, CRUD API, seed data, and worker evaluation.
+
 ## [1.2.0] - 2026-07-25
 
 ### Added

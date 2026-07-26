@@ -1,8 +1,8 @@
 # Dispatch
 
-Dispatch is a self-hosted notification orchestration service. It accepts events through managed connectors, its API, or authenticated universal ingress, chooses eligible channels through deterministic policy with optional Gemini advice, and delivers through email, Telegram, or webhooks with durable scheduling, retries, and a complete audit trail.
+Dispatch is a self-hosted notification orchestration service. It accepts events through managed connectors, its API, or authenticated universal ingress and delivers them to the destination configured for the selected recipient through email, Telegram, or webhooks. Delivery includes durable scheduling, retries, and a complete audit trail; optional Gemini analysis adds category, priority, and a summary.
 
-The product is a single-tenant modular monolith: a Go API and worker share PostgreSQL as the source of truth, while a React operations console exposes routing and delivery state.
+The product is a single-tenant modular monolith: a Go API and worker share PostgreSQL as the source of truth, while a React operations console exposes analysis and delivery state.
 
 ## Quick start
 
@@ -41,8 +41,8 @@ curl -X POST http://localhost:8090/api/v1/notifications \
 - PostgreSQL-backed durable jobs claimed with `FOR UPDATE SKIP LOCKED`.
 - At-least-once processing and channel-level idempotency identifiers.
 - Notification creation and initial job enqueue in one transaction.
-- Explicit routing and deterministic rules take precedence over AI.
-- AI output is schema-validated; timeout, invalid output, low confidence, or disabled AI uses deterministic fallback.
+- The recipient selected by an integration is the only source of truth for the delivery destination.
+- AI only classifies and summarizes; schema validation, timeouts, and confidence thresholds provide a deterministic analysis fallback.
 - Bounded retries end in an inspectable dead-letter state.
 - Webhook destinations reject loopback, private, link-local, and unsafe URLs by default.
 - Ingress sources use per-source bearer, custom-header, HMAC, Slack, or Stripe authentication and payload-level deduplication.
@@ -51,7 +51,7 @@ curl -X POST http://localhost:8090/api/v1/notifications \
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Local console access does not require a key by default. Before exposing Dispatch outside a trusted local network, set `CONSOLE_AUTH_ENABLED=true` and a unique `API_KEY` of at least 16 characters. Set a stable, independent `INGRESS_ENCRYPTION_KEY` before creating signed sources. AI is off by default. To enable advisory routing, set `AI_ENABLED=true` and `GEMINI_API_KEY`. The default stable model is `gemini-3.5-flash-lite`.
+Copy `.env.example` to `.env`. Local console access does not require a key by default. Before exposing Dispatch outside a trusted local network, set `CONSOLE_AUTH_ENABLED=true` and a unique `API_KEY` of at least 16 characters. Set a stable, independent `INGRESS_ENCRYPTION_KEY` before creating signed sources. AI is off by default. To enable advisory analysis, set `AI_ENABLED=true` and `GEMINI_API_KEY`. The default stable model is `gemini-3.5-flash-lite`.
 
 For local webhook targets, `WEBHOOK_ALLOW_PRIVATE=true` is an explicit development-only escape hatch.
 

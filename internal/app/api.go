@@ -24,7 +24,6 @@ import (
 	"dispatch/internal/config"
 	"dispatch/internal/notification"
 	"dispatch/internal/recipient"
-	"dispatch/internal/routing"
 	"dispatch/internal/store/postgres"
 	"dispatch/internal/template"
 )
@@ -80,10 +79,6 @@ func (api *API) Handler() http.Handler {
 			routes.Post("/templates", api.createTemplate)
 			routes.Put("/templates/{id}", api.updateTemplate)
 			routes.Delete("/templates/{id}", api.deleteTemplate)
-			routes.Get("/rules", api.listRules)
-			routes.Post("/rules", api.createRule)
-			routes.Put("/rules/{id}", api.updateRule)
-			routes.Delete("/rules/{id}", api.deleteRule)
 			routes.Post("/ai/preview", api.aiPreview)
 			routes.Get("/sources", api.listIngressSources)
 			routes.Post("/sources", api.createIngressSource)
@@ -336,49 +331,6 @@ func normalizeTemplate(item *template.Template) {
 	}
 }
 
-func (api *API) listRules(writer http.ResponseWriter, request *http.Request) {
-	items, err := api.Store.ListRules(request.Context())
-	if err != nil {
-		api.storeError(writer, err)
-		return
-	}
-	writeJSON(writer, 200, map[string]any{"data": items})
-}
-func (api *API) createRule(writer http.ResponseWriter, request *http.Request) {
-	var item routing.Rule
-	if !decode(writer, request, &item) {
-		return
-	}
-	if item.Name == "" || item.Condition == nil || item.Action == nil {
-		writeError(writer, 400, "validation_error", "name, condition and action are required")
-		return
-	}
-	if err := api.Store.CreateRule(request.Context(), &item); err != nil {
-		api.storeError(writer, err)
-		return
-	}
-	writeJSON(writer, 201, map[string]any{"data": item})
-}
-func (api *API) updateRule(writer http.ResponseWriter, request *http.Request) {
-	var item routing.Rule
-	if !decode(writer, request, &item) {
-		return
-	}
-	item.ID = chi.URLParam(request, "id")
-	if err := api.Store.UpdateRule(request.Context(), item); err != nil {
-		api.storeError(writer, err)
-		return
-	}
-	writeJSON(writer, 200, map[string]any{"data": item})
-}
-func (api *API) deleteRule(writer http.ResponseWriter, request *http.Request) {
-	if err := api.Store.DeleteRule(request.Context(), chi.URLParam(request, "id")); err != nil {
-		api.storeError(writer, err)
-		return
-	}
-	writer.WriteHeader(204)
-}
-
 func (api *API) dashboard(writer http.ResponseWriter, request *http.Request) {
 	result, err := api.Store.Dashboard(request.Context())
 	if err != nil {
@@ -414,7 +366,7 @@ func (api *API) settings(writer http.ResponseWriter, _ *http.Request) {
 }
 func (api *API) aiPreview(writer http.ResponseWriter, request *http.Request) {
 	if api.AI == nil || !api.Config.AI.Enabled {
-		writeError(writer, 503, "ai_unavailable", "AI routing is disabled")
+		writeError(writer, 503, "ai_unavailable", "AI analysis is disabled")
 		return
 	}
 	var input ai.DecisionInput

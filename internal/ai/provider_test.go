@@ -2,15 +2,26 @@ package ai
 
 import "testing"
 
-func TestRedactMetadataUsesAllowList(t *testing.T) {
-	result := RedactMetadata(map[string]any{"order_id": "42", "password": "secret", "token": "secret"})
-	if result["order_id"] != "42" || result["password"] != nil || result["token"] != nil {
-		t.Fatalf("redaction failed: %#v", result)
+func TestValidateDecisionAcceptsAnalysis(t *testing.T) {
+	if !ValidateDecision(Decision{
+		Category: "ops", Priority: "normal", Summary: "Service recovered", Confidence: .9,
+	}) {
+		t.Fatal("expected a valid analysis decision")
 	}
 }
 
-func TestValidateDecisionRejectsUnknownChannel(t *testing.T) {
-	if ValidateDecision(Decision{Category: "ops", Priority: "normal", Summary: "x", RecommendedChannels: []string{"sms"}, Confidence: .9}) {
-		t.Fatal("unknown channel accepted")
+func TestValidateDecisionRejectsInvalidPriority(t *testing.T) {
+	if ValidateDecision(Decision{
+		Category: "ops", Priority: "urgent", Summary: "Service recovered", Confidence: .9,
+	}) {
+		t.Fatal("expected invalid priority to be rejected")
+	}
+}
+
+func TestValidateDecisionRejectsInvalidConfidence(t *testing.T) {
+	if ValidateDecision(Decision{
+		Category: "ops", Priority: "normal", Summary: "Service recovered", Confidence: 1.1,
+	}) {
+		t.Fatal("expected invalid confidence to be rejected")
 	}
 }

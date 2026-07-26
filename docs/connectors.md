@@ -117,7 +117,7 @@ import old activity. The worker synchronizes at `GOOGLE_POLL_INTERVAL`:
 
 - **Gmail:** new inbox messages with inbox/unread/important filters; up to
   12 KB of text plus attachment names, MIME types, and declared sizes for
-  routing and AI. Attachment contents aren't processed.
+  summaries and AI analysis. Attachment contents aren't processed.
 - **Calendar + Meet:** created, updated, and cancelled primary-calendar events,
   Meet links, and configurable upcoming reminders.
 - **Drive + Docs/Sheets/Slides:** Drive Activity actions such as edits,

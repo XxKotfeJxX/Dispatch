@@ -1,12 +1,12 @@
 # Universal ingress
 
-Dispatch can turn practically any authenticated JSON webhook into a normal notification. Each source has its own endpoint, recipient, routing channels, authentication secret, field mapping, event history, and deduplication boundary.
+Dispatch can turn practically any authenticated JSON webhook into a normal notification. Each source has its own endpoint, recipient, authentication secret, field mapping, event history, and deduplication boundary.
 
 ## Create a source
 
 1. Open **Sources** in the console.
 2. Choose a provider preset or **Generic JSON**.
-3. Select the Dispatch recipient and optional explicit delivery channels.
+3. Select the Dispatch recipient. Its configured destination is used for delivery.
 4. Adjust the dot-path mappings if the producer's JSON differs from the preset.
 5. Create the source and immediately save the generated secret. It is shown once.
 6. Configure the producer to send JSON to `https://dispatch.example/ingest/v1/<slug>`.

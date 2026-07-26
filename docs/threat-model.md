@@ -14,7 +14,7 @@
 | Internal network | Webhook SSRF | HTTP(S)-only parsing, no URL credentials/fragments, DNS resolution, private/loopback/link-local blocking |
 | Queue integrity | Duplicate or lost work | Atomic enqueue, unique idempotency keys, row locks with `SKIP LOCKED`, stale lock recovery |
 | Delivery providers | Infinite retry amplification | Bounded exponential schedule, retryability classification, dead-letter terminal state |
-| Routing | Prompt injection or invalid AI output | Metadata allowlist, instructions separated from untrusted content, structured schema, validation, confidence gate, deterministic precedence and fallback |
+| AI analysis | Prompt injection or invalid AI output | Metadata allowlist, instructions separated from untrusted content, structured schema, validation, confidence gate, deterministic fallback, and no AI control over destinations |
 | Database | Injection | Parameterized pgx queries and fixed filter clauses |
 
 Residual risk: GitHub-compatible HMAC does not include a trusted timestamp, so replay protection depends on the provider delivery ID and Dispatch deduplication. At-least-once processing may repeat an external side effect if a delivery provider accepts a request but its response is lost. Provider idempotency identifiers and reconciliation are required.

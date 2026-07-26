@@ -27,13 +27,11 @@ type DecisionInput struct {
 }
 
 type Decision struct {
-	Category            string   `json:"category"`
-	Priority            string   `json:"priority"`
-	Summary             string   `json:"summary"`
-	RecommendedChannels []string `json:"recommended_channels"`
-	SendImmediately     bool     `json:"send_immediately"`
-	Confidence          float64  `json:"confidence"`
-	ReasonCodes         []string `json:"reason_codes"`
+	Category    string   `json:"category"`
+	Priority    string   `json:"priority"`
+	Summary     string   `json:"summary"`
+	Confidence  float64  `json:"confidence"`
+	ReasonCodes []string `json:"reason_codes"`
 }
 
 type Record struct {
@@ -82,14 +80,6 @@ func ValidateDecision(decision Decision) bool {
 	if !priorities[decision.Priority] || decision.Category == "" || decision.Summary == "" ||
 		decision.Confidence < 0 || decision.Confidence > 1 {
 		return false
-	}
-	if len(decision.RecommendedChannels) > 3 {
-		return false
-	}
-	for _, channel := range decision.RecommendedChannels {
-		if channel != "email" && channel != "telegram" && channel != "webhook" {
-			return false
-		}
 	}
 	return true
 }

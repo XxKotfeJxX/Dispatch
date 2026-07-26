@@ -9,37 +9,73 @@ import (
 	"dispatch/internal/recipient"
 )
 
-func TestDecidePrecedence(t *testing.T) {
-	now := time.Now().UTC()
-	base := PolicyInput{
-		Notification: notification.Notification{EventType: "invoice.ready", Subject: "Invoice", RequestedChannels: []string{"email"}},
-		Recipient:    recipient.Recipient{Email: "a@example.test", TelegramChatID: "1", Preferences: recipient.Preferences{DefaultChannels: []string{"telegram"}}},
-		Rules:        []Rule{{ID: "rule", Enabled: true, Condition: map[string]any{"event_type": "invoice.ready"}, Action: map[string]any{"channels": []string{"telegram"}}}},
-		AI:           &ai.Decision{Category: "billing", Priority: "high", Summary: "AI", RecommendedChannels: []string{"telegram"}, Confidence: .99},
-		AIConfigured: true, Now: now,
+func TestDecideUsesRecipientChannelsAndAIOnlyForAnalysis(t *testing.T) {
+	result := Decide(PolicyInput{
+		Notification: notification.Notification{
+			Subject:           "Invoice",
+			RequestedChannels: []string{"webhook"},
+		},
+		Recipient: recipient.Recipient{
+			Email: "a@example.test",
+			Preferences: recipient.Preferences{
+				DefaultChannels: []string{"email"},
+			},
+		},
+		AI: &ai.Decision{
+			Category: "billing", Priority: "high", Summary: "Invoice is ready",
+			Confidence: .99,
+		},
+		AIConfigured: true,
+		Now:          time.Now().UTC(),
+	}, .75, map[string]bool{"email": true, "webhook": true})
+
+	if len(result.Channels) != 1 || result.Channels[0] != "email" {
+		t.Fatalf("recipient destination must be definitive: %#v", result)
 	}
-	result := Decide(base, .75, map[string]bool{"email": true, "telegram": true}, false)
-	if len(result.Channels) != 1 || result.Channels[0] != "email" || result.UsedAI {
-		t.Fatalf("explicit channel must win: %#v", result)
-	}
-	base.Notification.RequestedChannels = nil
-	result = Decide(base, .75, map[string]bool{"email": true, "telegram": true}, false)
-	if result.Channels[0] != "telegram" || result.MatchedRuleID != "rule" {
-		t.Fatalf("rule must win over AI: %#v", result)
+	if !result.UsedAI || result.Category != "billing" || result.Priority != "high" {
+		t.Fatalf("AI analysis was not applied: %#v", result)
 	}
 }
 
-func TestDecideFallsBackOnLowConfidenceAndDisabledChannel(t *testing.T) {
+func TestDecideFallsBackFromLowConfidenceWithoutChangingDestination(t *testing.T) {
 	result := Decide(PolicyInput{
 		Notification: notification.Notification{Subject: "Status"},
 		Recipient: recipient.Recipient{
-			Email: "a@example.test", TelegramChatID: "1",
-			Preferences: recipient.Preferences{DefaultChannels: []string{"email"}, DisabledChannels: []string{"telegram"}},
+			TelegramChatID: "1",
+			Preferences: recipient.Preferences{
+				DefaultChannels: []string{"telegram"},
+			},
 		},
-		AI:           &ai.Decision{Category: "ops", Priority: "normal", Summary: "AI", RecommendedChannels: []string{"telegram"}, Confidence: .2},
-		AIConfigured: true, Now: time.Now(),
-	}, .75, map[string]bool{"email": true, "telegram": true}, false)
-	if len(result.Channels) != 1 || result.Channels[0] != "email" || result.FallbackReason != "ai_confidence_below_threshold" {
-		t.Fatalf("unexpected fallback: %#v", result)
+		AI: &ai.Decision{
+			Category: "ops", Priority: "critical", Summary: "AI", Confidence: .2,
+		},
+		AIConfigured: true,
+		Now:          time.Now().UTC(),
+	}, .75, map[string]bool{"telegram": true})
+
+	if len(result.Channels) != 1 || result.Channels[0] != "telegram" {
+		t.Fatalf("unexpected destination: %#v", result)
+	}
+	if result.UsedAI || result.Category != "general" ||
+		result.FallbackReason != "ai_confidence_below_threshold" {
+		t.Fatalf("unexpected analysis fallback: %#v", result)
+	}
+}
+
+func TestDecideDoesNotRerouteUnavailableRecipientDestination(t *testing.T) {
+	result := Decide(PolicyInput{
+		Notification: notification.Notification{Subject: "Status"},
+		Recipient: recipient.Recipient{
+			Email:      "a@example.test",
+			WebhookURL: "https://example.test/hook",
+			Preferences: recipient.Preferences{
+				DefaultChannels: []string{"email"},
+			},
+		},
+		Now: time.Now().UTC(),
+	}, .75, map[string]bool{"email": false, "webhook": true})
+
+	if len(result.Channels) != 0 {
+		t.Fatalf("unavailable destination must not silently reroute: %#v", result)
 	}
 }

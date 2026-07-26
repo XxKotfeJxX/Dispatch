@@ -30,14 +30,8 @@ Universal ingress authenticates a source-specific endpoint, maps nested JSON fie
 
 Managed connectors add a lifecycle around that boundary. Static manifests describe provider capabilities and setup requirements; persisted connections contain non-secret configuration plus AES-GCM encrypted credentials. OAuth callbacks consume single-use, expiring state records and PKCE verifiers. Provider-specific callbacks normalize into the same notification and job pipeline, so connector code does not implement delivery.
 
-Routing order is:
+The recipient selected by a connector or ingress source determines the delivery destination. Its default channel, disabled-channel preferences, destination presence, provider readiness, scheduling, and quiet hours are authoritative. Dispatch never silently reroutes a notification to a different recipient channel.
 
-1. Explicit requested channels.
-2. First matching enabled deterministic rule by priority.
-3. Valid Gemini decision above the confidence threshold.
-4. Recipient default channels.
-5. Eligible webhook fallback.
-
-Recipient preferences, destination presence, provider readiness, disabled channels, scheduling, and quiet hours are applied after the route source is chosen.
+Gemini is an optional analysis step. A valid decision above the confidence threshold may set category, priority, and summary, but it cannot select or change a delivery destination.
 
 See ADRs for the decisions behind [PostgreSQL jobs](adr/0001-postgres-job-queue.md) and [advisory AI](adr/0002-advisory-ai-routing.md).

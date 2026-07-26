@@ -369,12 +369,6 @@ paths:
   /api/v1/templates/{id}:
     put: {summary: Update template, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"200": {description: Updated}}}
     delete: {summary: Delete template, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"204": {description: Deleted}}}
-  /api/v1/rules:
-    get: {summary: List deterministic routing rules, responses: {"200": {description: Rules}}}
-    post: {summary: Create routing rule, responses: {"201": {description: Created}}}
-  /api/v1/rules/{id}:
-    put: {summary: Update routing rule, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"200": {description: Updated}}}
-    delete: {summary: Delete routing rule, parameters: [{$ref: "#/components/parameters/ID"}], responses: {"204": {description: Deleted}}}
   /api/v1/dashboard:
     get: {summary: Get operational dashboard, responses: {"200": {description: Dashboard}}}
   /api/v1/settings:
@@ -385,7 +379,7 @@ paths:
       responses: {"200": {description: Event stream, content: {text/event-stream: {schema: {type: string}}}}}
   /api/v1/ai/preview:
     post:
-      summary: Preview an advisory AI decision
+      summary: Preview AI classification and summary
       responses: {"200": {description: Decision}, "503": {$ref: "#/components/responses/Error"}}
 components:
   securitySchemes:
@@ -474,6 +468,8 @@ components:
         default_subject: {type: string}
         requested_channels:
           type: array
+          deprecated: true
+          description: Legacy field retained for compatibility; delivery uses the selected recipient destination.
           uniqueItems: true
           items: {type: string, enum: [email, telegram, webhook]}
     CreateIngressSource:
@@ -509,7 +505,12 @@ components:
         subject: {type: string, maxLength: 200}
         body: {type: string, maxLength: 100000}
         metadata: {type: object, additionalProperties: true}
-        requested_channels: {type: array, items: {type: string, enum: [email, telegram, webhook]}, uniqueItems: true}
+        requested_channels:
+          type: array
+          deprecated: true
+          description: Legacy field retained for compatibility; delivery uses the selected recipient destination.
+          items: {type: string, enum: [email, telegram, webhook]}
+          uniqueItems: true
         scheduled_at: {type: [string, "null"], format: date-time}
     Notification:
       allOf:

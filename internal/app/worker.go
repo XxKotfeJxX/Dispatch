@@ -138,15 +138,11 @@ func (worker *Worker) processNotification(ctx context.Context, notificationID st
 	if err != nil {
 		return err
 	}
-	rules, err := worker.Store.ListRules(ctx)
-	if err != nil {
-		return err
-	}
 	var decision *ai.Decision
 	record := ai.Record{
 		ID: "aid_" + uuid.NewString(), NotificationID: item.ID, Provider: "fallback",
 		Model: "", PromptVersion: worker.Config.AI.PromptVersion, Status: ai.StatusSkipped, CreatedAt: time.Now().UTC(),
-		Decision:    ai.Decision{RecommendedChannels: []string{}, ReasonCodes: []string{}},
+		Decision:    ai.Decision{ReasonCodes: []string{}},
 		RawResponse: map[string]any{},
 	}
 	if worker.Config.AI.Enabled && worker.AI != nil {
@@ -168,9 +164,9 @@ func (worker *Worker) processNotification(ctx context.Context, notificationID st
 		record.Status, record.FallbackReason = ai.StatusFallbackUsed, "disabled_or_unconfigured"
 	}
 	final := routing.Decide(routing.PolicyInput{
-		Notification: item, Recipient: person, Rules: rules, AI: decision,
+		Notification: item, Recipient: person, AI: decision,
 		AIConfigured: worker.Config.AI.Enabled && worker.AI != nil, Now: time.Now().UTC(),
-	}, worker.Config.AI.MinConfidence, worker.providerAvailability(), worker.Config.Webhook.Enabled)
+	}, worker.Config.AI.MinConfidence, worker.providerAvailability())
 	if len(final.Channels) == 0 {
 		record.Status, record.FallbackReason = ai.StatusFallbackUsed, "no_available_destination"
 		_ = worker.Store.SaveAIDecision(ctx, record)
@@ -183,7 +179,7 @@ func (worker *Worker) processNotification(ctx context.Context, notificationID st
 	if err := worker.Store.SaveAIDecision(ctx, record); err != nil {
 		return err
 	}
-	if err := worker.Store.SetNotificationRouting(ctx, item.ID, final.Category, final.Priority, final.Summary); err != nil {
+	if err := worker.Store.SetNotificationAnalysis(ctx, item.ID, final.Category, final.Priority, final.Summary); err != nil {
 		return err
 	}
 	destinations := map[string]string{"email": person.Email, "telegram": person.TelegramChatID, "webhook": person.WebhookURL}

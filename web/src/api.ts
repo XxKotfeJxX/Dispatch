@@ -27,7 +27,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
 export type Notification = {
   id: string; idempotency_key: string; recipient_id: string; event_type: string
-  subject: string; body: string; category?: string; priority: string; status: string
+  subject: string; body: string; summary?: string; category?: string; priority: string; status: string
   requested_channels: string[]; created_at: string; scheduled_at?: string
 }
 export type Recipient = {
